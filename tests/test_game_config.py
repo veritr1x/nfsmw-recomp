@@ -61,8 +61,15 @@ class NfsmwConfigTests(unittest.TestCase):
         self.assertEqual(self.cfg["translate"]["volatile_reads"], [])
 
     def test_bundle_exclusions_and_setup(self):
-        for pattern in ("MOVIES", "Uninstall", "scripts", "*.dll"):
+        # What the iPad bundle leaves behind: the uninstaller, the installer
+        # helpers, and the Windows-only DLLs a device cannot load anyway.
+        for pattern in ("Uninstall", "scripts", "*.dll"):
             self.assertIn(pattern, self.cfg["bundle"]["exclude"])
+        # And what it keeps. The cinematics are 856 MB and the temptation is
+        # to drop them, but the game decodes its own VP6 and plays them on the
+        # device, so excluding them would take the intro and the outro with
+        # them. This asserted the opposite until the cinematics worked.
+        self.assertNotIn("MOVIES", self.cfg["bundle"]["exclude"])
         self.assertEqual(self.cfg["setup"]["required_dirs"], ["CARS", "FRONTEND", "GLOBAL", "SOUND", "TRACKS"])
         self.assertNotIn("annotations_url", self.cfg["setup"])
 

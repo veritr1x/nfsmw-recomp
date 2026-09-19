@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+- Re-pin the kit to `main` 30fb57d. The merge that landed this game's kit
+  work on main had dropped 27 kernel32 import declarations; an import with no
+  table entry has an unknown argument count, so every call to one leaked its
+  arguments and a thread polling a timer walked the guest stack ten megabytes
+  below itself into `.bss`, where it overwrote a callback table with its own
+  return addresses and died four subsystems away in SEH. Restored. Recovery
+  now arbitrates on evidence rather than on which guess resolved first
+  (36,566 to 36,717 functions, against 36,718 for the translator this port
+  was built on), `__initterm` is matched by its shape rather than by one
+  register allocation, and `RECOMP_NULL_FAULTS` can make the never-mapped
+  first 64 KB fault the way Windows does (a build option, off by default,
+  because the guest reaches those reads with pointers Windows would have
+  filled in). `SystemTimeToFileTime` was declared and empty; implemented.
+- 836 CRT static initializers had never run. This executable's `__initterm`
+  keeps its cursor on the stack and calls through `EDX`, and the kit knew
+  only the `ESI`/`CALL EAX` spelling, so the CRT walked its table, called
+  each constructor through the address table, and the address table had never
+  heard of them: every one of those globals reached the game with a null
+  vtable and null members. One owns a bitset whose base stayed null, so the
+  guest set bits at guest `0x138` and read them back from the same place.
+- `game.toml` names eight entry points a run proved, where recovery does not
+  reach them: `0x006db6c0` is a thread start routine, so the thread it
+  belongs to returned immediately and did nothing; `0x007cd5e4` is an SEH
+  handler, and without it a fault the game handles itself reached the
+  dispatcher as `ExceptionContinueExecution` and stopped the run. The last
+  three were each reachable only once the one before it could be delivered. A
+  quick-race run now reports no undeliverable calls at all, where every run
+  before it named at least one.
+- The game renders its front end and career menus, reaches track select and
+  drives a race, and one or two runs in five play `smoke/quick-race.script`
+  to the end with `guest exit code 0`. The rest hang entering race loading:
+  the main thread spins in a translated function rather than deadlocking, so
+  the watchdog reports it as the guest no longer calling into the runtime.
+  Measured at 0 to 2 in 5 across three kit configurations, none
+  distinguishable from another at that sample size, so nothing in this
+  re-pin is a regression and five runs cannot settle the question either way.
+  Recorded in `docs/analysis.md` with the instruments that move it and the
+  one that does not.
+
 - The translation compiles and the game boots as far as its first Direct3D 9
   call. `game.toml` names two CRT helper entry points the Ghidra listing
   lacks; everything else was kit work (see the kit's changelog): MMX/SSE2

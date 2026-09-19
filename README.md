@@ -21,37 +21,67 @@ tracks, cinematics, generated game code and replacement packs are prepared
 locally and are not included. See [NOTICE](NOTICE) for ownership and
 dependency credits.
 
-## Status: playable
+## Which executable
 
-The game plays. Direct3D 9 is translated through one shader generator and
-renders on Metal (macOS, iPad), Vulkan (Linux, Windows, and macOS through
-MoltenVK) and WebGPU (the browser).
+The 2005 PC Black Edition ships one game executable, **`speed.exe`** (linked
+by Microsoft 7.10, Visual C++ .NET 2003, timestamp 2005-12-01). It renders
+through **Direct3D 9** with its own effect files, plays sound through
+**DirectSound** from `.abk` banks whose heap routines are x86 code the kit
+runs in a small interpreter, and reads its tracks and cars from the game
+folder. The exact image is pinned by SHA-256 in `game.toml`; no other build
+is accepted.
 
-- **macOS.** Up to 4K with the render scale following the window, 4x
-  multisampling, depth-texture shadow maps and occlusion queries. A pinned 4K
-  run with every option at maximum holds 110-123 fps.
-- **iPad.** Plays by touch; the core mods are compiled into the app, which a
-  stock device needs because it loads no plugins.
-- **Linux.** Renders the race, including under software Vulkan (lavapipe).
-- **Windows.** Cross-compiled with llvm-mingw; runs the whole test script at
-  100-170 fps under CrossOver. A run on Windows hardware is still untested.
-- **The browser.** WebGPU, tested in Chrome and Safari: the game runs on a
-  worker, reads its files from the browser's private storage, and a race runs
-  at 113-166 fps. Reading a render target back is not supported there.
+## Status: plays through the menus; a scripted race completes intermittently
 
-The simulation runs at 120 Hz and the widescreen fix (FOV, HUD, minimap) is
-ported, both in the `core.nfsmw` mod. The audio-bank heap routines run in a
-small x86 interpreter checked against Unicorn. Online play (`ws2_32`,
+The game boots, renders its front end and career menus, reaches track select
+and drives a race. What it does not do yet is do so reliably: of five runs of
+`smoke/quick-race.script` on macOS, one or two play the script to the end and
+exit cleanly, and the rest hang entering race loading and are stopped by the
+watchdog. The cause is known to be a timing-dependent failure in the loading
+path and is the port's open blocker; the mechanism, the measurements and the
+dead ends are in [docs/analysis.md](docs/analysis.md).
+
+## Platform status
+
+Status as of 2026-09-19, from the [run log](docs/analysis.md). macOS is the
+only platform re-checked against the current kit pin; the others were
+verified against an earlier one and are marked accordingly.
+
+| Platform | Verified status | Build command | Known issues and remaining checks |
+| --- | --- | --- | --- |
+| macOS 14+ | Boots, renders the front end and career menus on Metal, reaches track select and a race. One to two runs in five play `smoke/quick-race.script` to the end with `guest exit code 0`. | `.venv/bin/python tools/build.py` (app); `--target smoke` | The intermittent hang entering race loading is open and is the blocker. Performance is unmeasured on this pin: the 4K figures below predate it and cannot be re-measured until a run reaches gameplay reliably. |
+| iPadOS 17+ | Played by touch on an earlier kit pin, with the core mods compiled into the app, which a stock device needs because it loads no plugins. | `.venv/bin/python tools/build.py --target ios --console` | Not re-checked since the kit gained restored kernel32 imports, new recovery arbitration and 836 static initializers. |
+| Linux | Rendered the race on an earlier pin, including under software Vulkan (lavapipe). | `.venv/bin/python tools/build.py --regenerate` | Not re-checked on the current pin. |
+| Windows | Cross-compiled with llvm-mingw and ran the test script at 100-170 fps under CrossOver on an earlier pin. | `--preset windows-cross` | Never run on Windows hardware. Not re-checked on the current pin. |
+| The browser | WebGPU in Chrome and Safari on an earlier pin: the game runs on a worker and reads its files from the browser's private storage; a race ran at 113-166 fps. | `.venv/bin/python tools/build.py --target web` | Reading a render target back is unsupported there. Not re-checked on the current pin. |
+
+### Known issues
+
+- **The race-loading hang.** A scripted race completes one or two runs in
+  five. The main thread spins in a translated function rather than deadlocking,
+  so the watchdog reports it as the guest no longer calling into the runtime.
+  Every instrument tried so far moves it; `sample` on the hung process is the
+  one measurement that does not.
+- **Shutdown.** A guest worker outlives the run, which the smoke host reports
+  as exit code 4. Pharaoh, Siege and Populous have teardown failures of the
+  same family; it is a kit-level item rather than this game's.
+- **Earlier per-platform figures.** The 4K and browser numbers quoted above
+  were measured before the current kit pin and are kept as history, not as
+  claims about it.
+
+Direct3D 9 is translated through one shader generator and renders on Metal
+(macOS, iPad), Vulkan (Linux, Windows, and macOS through MoltenVK) and WebGPU
+(the browser). The simulation runs at 120 Hz and the widescreen fix (FOV, HUD,
+minimap) is ported, both in the `core.nfsmw` mod. Online play (`ws2_32`,
 `tapi32`, `netapi32`, the bundled `server.dll`) is out of scope and stubbed to
 fail cleanly, and the Windows-only extras in the game folder (the ASI loader
 and the widescreen fix) are not part of the port; their fixes are native host
-behaviour instead. [docs/analysis.md](docs/analysis.md) records the
-executable's graphics path, its effect shaders and each bring-up step.
+behaviour instead.
 
 ## Build on macOS
 
-The steps are the kit's; they run today up to the translation, which is
-where the bring-up stands.
+The steps are the kit's. The last of them regenerates the translation and
+builds the app.
 
 ```sh
 git clone --recurse-submodules https://github.com/veritr1x/nfsmw-recomp.git

@@ -865,3 +865,66 @@ settings in core.nfsmw exist but stretch the 4:3 layout.
 - Reading a render target back is not supported in the browser, and the audio
   sink's "starved" count is an artifact: SDL's Emscripten device drains the
   queue on every pull, and no pull arrived late.
+
+## Run log: the merge, the initializers, and the race (kit 30fb57d)
+
+Landing this game's kit work on `main` cost it 27 kernel32 import
+declarations. An import with no entry in the table has an unknown argument
+count, and `imports_dispatch` then pops only the return address, so every
+call to one leaks its arguments. It says so, once per import:
+
+```
+KERNEL32.dll!SleepEx has an unknown stdcall argument count: not adjusting
+ESP, the guest stack will drift if it is really stdcall
+```
+
+A thread polling a waitable timer does that hundreds of thousands of times.
+ESP walked ten megabytes below its stack into `.bss` and landed on the
+callback table at `0x9bb10c`, so each `call` there pushed a return address
+over the table it was about to read, and the addresses it called back were
+its own return addresses. The run ended in SEH, refusing a registration
+outside the guest stack — four subsystems and several thousand log lines from
+the cause.
+
+### The static initializers
+
+The translator reported `0 CRT static initializers from 0 __initterm tables`.
+There are 836, in four tables. `007ca540` is textbook `_initterm` — walk the
+table, skip nulls, `call [edx]` — but the kit matched the walk by one register
+allocation (`CALL EAX`, `ADD ESI,0x4`, a load through `ESI`), and this CRT
+keeps its cursor on the stack. So every constructor was called through the
+address table, the address table had never heard of them, and the calls
+returned 0. The globals reached the game with null vtables: `0x009aa9d0` has
+one, and the bitset at `+0x84c` stayed null, so the guest set bits at guest
+`0x138` and read them back from the same place — the flat arena made a null
+dereference behave like ordinary data.
+
+### The race, and what measures it
+
+A quick-race run completes one or two times in five. The rest hang entering
+race loading. The main thread is **running**, not blocked: it spins in
+`body_00684710` walking a structure whose `+4` holds 1 where a pointer
+belongs, and with the arena returning zeros for the null page the walk never
+reaches `_Isnil`. That is why the watchdog reports it as the guest no longer
+calling into the runtime, and why `sample <pid>` on the hung process is the
+first thing to do — it separates a spin from a wait in thirty seconds.
+
+Measured, so it is not re-litigated: pre-change kit 2 of 5, current kit with
+the null check compiled in 0 of 5, compiled out 1 of 5. Indistinguishable at
+that sample size. Five runs cannot settle a question about a 20–40% failure,
+and this hang was called deterministic twice on two or three runs and was not.
+
+Instruments that move it, and so cannot measure it:
+
+- `RECOMP_WATCH` on the address — 28k hits on a reused stack slot, and the
+  run starts completing.
+- `RECOMP_NULL_FAULTS` — the run takes its exception path instead and fails
+  elsewhere, at an indirect jump with no block entry.
+- A conditional breakpoint on the faulting line — evaluated at a line hit
+  millions of times, it never arrives.
+
+One correction worth keeping: the structure is a **stack local of the same
+thread**, built by three calls immediately before the one that fails
+(`0x684b60`, `0x684ae0`, `0x6846a0`). Nothing is racing on that memory. What
+varies is upstream of it, in what those calls were given.
+
