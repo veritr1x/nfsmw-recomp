@@ -928,3 +928,238 @@ thread**, built by three calls immediately before the one that fails
 (`0x684b60`, `0x684ae0`, `0x6846a0`). Nothing is racing on that memory. What
 varies is upstream of it, in what those calls were given.
 
+## iPad controls and color check (2026-09-21, kit 639a99f)
+
+Built with `tools/build.py --target ios --team BDFW2Z27HA --no-install --jobs 6`
+and installed on an iPad Pro 11-inch (M4). Device screenshots show the
+restored green/warm graphics and movie colors after preserving BGRA during
+presenter staging. The shared controls fixes keep keyboard tabs inside the
+safe area and prevent hidden keyboard bits from hiding the gamepad when
+switching layouts. Native `controls_tests` and `keypad_tests` pass; opening
+the keyboard through a physical KEYS tap was not confirmed in this initial
+run (see the final device validation below).
+
+A run launched with `RECOMP_CONTROLS_TRACE=1` recorded gamepad button and
+stick input. After menu input it aborted with `no block entry for indirect
+jump to 0x00690100 from 0x0067f00e` (guest thread 1, EIP `0067f00e`,
+ESP `0efff138`, EBP `01fbdfe0`). This run does not establish playable racing;
+the cause was initially undiagnosed. Local evidence is in ignored
+`build/ipad-keypad-final-console.log` and `build/ipad-keypad-final-screen.png`.
+
+### Indirect-jump crash diagnosis
+
+The same abort repeated in `build/ipad-keypad-verification-console.log`.
+The original image's vtable slot `008abca0` points to `00690100`, a complete
+58-instruction method ending with `RET 4` at `0069022d`. It is absent from
+the Ghidra listings. The parity entry list incorrectly named `00690200`,
+which is inside the displacement of `MOV [ECX+0xf4],EDX` at `006901fc`.
+That configured boundary split the real method before its return and
+prevented speculative recovery; the generated dispatcher carried the false
+entry and omitted the actual vtable target.
+
+Replace that false seed with the verified `00690100` entry. Regeneration
+restores the complete method and its dispatch entry, removes `00690200`,
+and reports no unsupported instructions, unresolved table gaps, or translation
+failures. `build/ipad-crash-entry-validation.log` checks the pinned image,
+vtable target, instruction boundaries, and reproduces the old truncation.
+
+The first corrected device run passed that point, then reported missing calls
+to `004e8690`, `006a1170`, and `006a1270`, and aborted at a second virtual
+jump, `0066fba9` to `006a1ac0`. Each is another real method blocked by an
+interior parity seed. Auditing aligned, padded method targets in contiguous
+image pointer tables found 21 additional omitted methods with 32 such seeds;
+their source slots and colliding instructions are recorded in ignored
+`build/ipad-crash-vtable-audit.log`. The config now seeds those verified
+methods and removes the conflicting guesses. A follow-up scan examined
+6,593 table targets; the other overlaps it found belonged to methods already
+present in the translation and were left outside this crash fix.
+
+The next device run passed those missing-method failures, but race setup
+called the untranslated `00439cd0` from `006ece40`, then aborted on a null
+virtual call at `00642e4c`. The translation report explains the omission:
+`00439cd0` was withdrawn because it calls `00439bb0`, which was withdrawn
+because `00410b00` was missing. This third routine is 112 original
+instructions ending in `RET 8` at `00410c40`; the parity seed `00410c00`
+bisects `MOV [ESP+0x24],0` at `00410bfc`. Replace that seed with `00410b00`.
+The missing outer routine also returns with `RET 8`, whereas the unknown-call
+fallback pops only the return address, leaving its two arguments on the
+stack. This establishes stack imbalance before the later null-call failure.
+Evidence: ignored `build/ipad-crash-vtable-fix-console.log` and
+`build/ipad-crash-stack-validation.log`. The next build was validated through
+the local quick-race script before another device installation.
+
+The local Metal smoke host reproduced the same missing `00439cd0` call at
+`006ece40`, followed by `SIGSEGV` (EIP `00000001`, ESP `0efffebc`, exit 5),
+using an isolated profile and `smoke/quick-race.script`. Frames reached the
+quick-play brief before the failure. Evidence is in ignored
+`build/ipad-crash-vtable-smoke/`. After correcting `00410b00`, regeneration
+retains all three routines and emits their original `RET 8` / `RET 4` /
+`RET 8` cleanup. The local binary contains all 25 restored routines and none
+of the 34 removed interior entries; the four config tests pass.
+
+The first corrected local run completed all 42 script steps, entered a race,
+reached its results screen, and exited with code 0. There were no unknown-call,
+missing-block, access-violation, or watchdog failures. Captures and the run
+record are in ignored `build/ipad-crash-stack-smoke/`; the final screenshot
+is a race loss (blown engine), not proof that the script drives or wins well.
+
+A second local run used an isolated copy of the iPad's registry and mod
+settings plus a `2420x1668` drawable. It also completed 42/42 steps and exited
+0 with no unknown calls, missing blocks, memory faults, or watchdog failures.
+The final capture shows the car at 81 mph, 12% race progress and a 1:16.89
+race timer. Evidence: ignored `build/ipad-crash-stack-ipad-settings-smoke/`.
+These two runs verify the reproduced crash path locally, not every race or
+the earlier intermittent loading hang across all timing conditions.
+
+The corrected iOS build then passed, was signed and installed, and launched
+on the same iPad. Physical input entered a race; successive screenshots show
+the race timer advancing from 4.72 seconds to 1:01.71 and progress reaching
+12%, with no unknown calls, missing blocks, memory faults or aborts in the
+captured console. A physical KEYS tap switched from pad to keys; tapping
+the bottom-left tab changed the hidden mask from 2 to 0 and both keyboard
+halves appeared. Switching back restored the gamepad. Evidence: ignored
+`build/ipad-crash-stack-ios-console.log` and the clean gameplay capture
+`build/ipad-crash-stack-ios-gameplay.png`. This verifies the reported crash
+path and keyboard opening on device; it is not an exhaustive game test.
+
+
+### iPad pad mappings and touch position
+
+The original executable imports `DINPUT8.dll!DirectInput8Create` and no
+XInput API. The earlier mapped-pad defaults sent Enter on cross and Escape
+on circle, while inheriting generic desktop actions for the other buttons.
+Native DirectInput probing accepted confirmation but did not supply the
+requested driving/pause layout. The final preset stays mapped, using the
+standard PC driving keys: cross/Up, square/Down, circle/Space,
+triangle/Return, Start/Escape. The left stick uses the kit's new
+`horizontal_arrows` mode so diagonal steering cannot also accelerate or
+brake. This is digital steering over keyboard input, not analog XInput.
+
+The mouse offset came from mixing client coordinates with desktop screen
+coordinates. The game creates its virtual window at (100,100), then routine
+`006c9b60` subtracts that origin from `GetCursorPos`. Both host cursor updates
+and queued mouse-message routing were passing client pixels as screen
+positions. The kit now converts client to screen on those paths while
+preserving the existing screen-coordinate API for virtual desktop callers.
+At guest (784,540) in a 1568x1080 frame, the old game mouse state was
+(304,195); it is now (348,240), the correct center after the game's widened
+480-high coordinate transform. At (200,1020), the game now records (88,453).
+The local mapped-pad run opens the Quit confirmation by tapping the visible
+Quit button at that point, and Start closes it. Baseline/probe evidence is
+in ignored `build/ipad-input-baseline/`, `build/ipad-native-race-1/` and
+`build/ipad-racing-mapped/`.
+
+Kit commits `924d3a4`, `7704991` and `0719253` contain the coordinate fixes,
+regressions for offset/negative-origin windows and queued child routing,
+steering-only bindings, and smoke pad input through the production native
+or mapped adapters. Six relevant native suites pass: runtime, pad, touch,
+keypad, controls and host. The 20 kit config tests and four game config tests
+also pass. Local test profiles are isolated; a read-only copy of the iPad
+profile is preserved under ignored `build/ipad-input-profile-backup/`.
+
+The mapped-pad race completed 58/58 steps and exited 0 with no undeliverable
+calls. It accelerated from 0 to 40 mph on cross, changed heading on left
+and right stick input, braked into reverse on square, and displayed the
+pause menu on Start. The touch on Quit opened its confirmation dialog and
+Start returned to the main menu before race selection. Captures and logs:
+ignored `build/ipad-racing-mapped/`. The racing script is checked in as
+`smoke/pad-race.script`; it is an input regression, not a race-winning bot.
+The pre-existing generated-thunk and renderer warnings still appear, so
+this is not a claim that the runtime has no remaining diagnostic warnings.
+
+The iOS build succeeded and was installed only after that local race test.
+The generated guest archive remains `528efb2a3da5cdde`, preserving the
+previously validated crash fix.
+
+A second run with a fresh copy of the iPad's saved profile also completed
+58/58 steps, exited 0 and reported no undeliverable calls. That profile
+selected a drag race; holding the throttle without shifting ended it with
+Blown Engine, so it does not independently verify the steering/brake/pause
+checks from the first run. Evidence: `build/ipad-racing-saved-profile/`.
+The installed app launches with the pad visible, and its console records
+physical pad input. Actual iPad driving and touch-target confirmation remain
+for the user; the local input regression is the verified behavioral result.
+
+### Supersampled frames and missing iPad mouse input
+
+The follow-up device trace showed that touch events were delivered but mapped
+outside the game's client area: a drawable point (1453,954) became guest
+(1825,1005). The device's game was 1280x720, rendered at 2.375x into a
+3040x1710 Metal texture. GPU staging published those texture dimensions as
+the logical game size, so both cursor motion and click hit testing used the
+wrong scale. This is separate from the virtual-window origin bug above.
+
+Kit `5e44c1e` passes logical and texture dimensions separately through GPU
+staging for Metal, Vulkan and WebGPU. The pixel copy retains its original
+size and color format; the published input layout uses the logical backbuffer.
+The native Metal regression covers 3040x1710 and 1280x720 textures with a
+1280x720 guest and 2420x1668 drawable. Its center maps to (640,360) at both
+scales. Host, touch and controls suites pass (3/3); other GPU backends have
+not been executed for this change.
+
+The smoke host now accepts `tap_drawable`, which starts a touch at a fixed
+game-image drawable point. The older `tap` command inverted the published
+layout from a guest coordinate, cancelling this bug in its own test input.
+The local `build/ipad-mouse-drawable/` run uses the device's exact game size,
+drawable and render scale with an isolated copy of its profile. A fixed tap
+advances "CLICK to continue" to the load confirmation, which shows the
+cursor. A center tap then reports guest (640,360), with game UI state
+(426,240) after its widescreen conversion. It completes 13/13 steps, exits
+0 and reports no undeliverable calls. This proves local behavior; physical
+iPad validation follows installation.
+
+The second local run (`build/ipad-mouse-targets/`, 16/16 steps, exit 0, no
+undeliverable calls) taps the visible title prompt, Continue and Quit buttons
+using fixed drawable coordinates. Captures confirm the load dialog, main
+menu and Quit confirmation. Start dismisses Quit. A final touch at
+(1900,500) maps to guest (1004,183) and visibly draws the cursor there.
+The reproducible script is `smoke/touch-drawable.script`; unlike the racing
+script it requires an existing profile and a 1280x720 logical resolution.
+
+The iOS build succeeded and was installed after both local touch runs;
+`build/ipad-mouse-fixed-console.log` records the launched device build.
+The generated guest archive remains `528efb2a3da5cdde`. Physical touch
+confirmation is pending; the previous race crash fix is unchanged.
+
+### Touch stick knobs and stationary bases
+
+The controls publisher compared a revision that included only cached raster
+layers. A held stick's knob is a separate GPU quad, so moving it changed the
+router output but left that revision unchanged. The publisher discarded the
+new view and the presenter retained the knob at its finger-down position.
+Kit `4d69788` includes held knob positions in the view revision, while keeping
+layer revisions stable. Floating bases still anchor at the initial touch;
+neither the base nor the touch zone follows subsequent movement.
+
+The regression first failed on horizontal and vertical motion with the old
+code (`recomp-kit/build/ipad-stick-red.log`). After the fix, `controls_tests`
+and `host_tests` pass (2/2, `recomp-kit/build/ipad-stick-green.log`). The Metal
+test renders fixed and floating sticks through revision-gated publication,
+checks that knob pixels move, and verifies every pixel outside the old/new
+knob bounds stays unchanged. The controls test also checks fixed base/zone
+coordinates, stable raster revisions, stationary views and release to idle.
+This verifies local rendering; physical iPad movement is not yet confirmed.
+
+The iOS build succeeded and was installed after these local checks.
+`build/ipad-stick-ios-console.log` records the new launch, and
+`build/ipad-stick-after.png` shows the intro rendering with both sticks
+visible. The user's physical drag check remains pending.
+
+### Simultaneous controls check
+
+Kit `3639f50` adds tests only, preserving the installed `4d69788` behavior.
+The tablet regression feeds two fingers through the real built-in layouts,
+router and mapped binding. It checks Up+Left, W+A, Shift+A, cross+square,
+cross+circle, cross+left/right steering and square+left steering. Both press
+orders and both release orders pass (32 combinations); each holds through
+60 input pumps, releasing one leaves the other held, and final release
+clears all keys. The controls, keypad, touch, pad adapter and Metal host
+suites pass (5/5), recorded in the standalone kit's ignored
+`build/ipad-multitouch-tests.log`.
+
+The existing physical-device log `build/ipad-stick-ios-console.log` also
+records cross held (`buttons 0001`) while the left stick moves from 0.55 to
+1.00, followed by cross release with the stick still held, then stick
+release. This confirms simultaneous pad routing on the iPad. The keyboard
+pairs were verified locally; no physical keyboard-layout chord was captured
+in this check. No application update was required.

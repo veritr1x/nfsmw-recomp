@@ -1,5 +1,13 @@
 # Testing
 
+For touch targeting, use `smoke/touch-drawable.script` with an isolated copy
+of an existing profile, `core.nfsmw/width=1280`, `core.nfsmw/height=720`, and
+`RECOMP_SMOKE_DRAWABLE=2420x1668`. Leave GPU scaling automatic. Verify the
+captures show title → Load complete → main menu → Quit confirmation, followed
+by Start returning to the menu and the cursor appearing at the final touch.
+The script uses fixed drawable coordinates so a wrong published input scale
+cannot cancel itself through conversion from guest coordinates.
+
 Run checks appropriate to your change. Every suite's output belongs under
 ignored `build/`; requested tests must report failure rather than silently
 skip prerequisites. Every command is a wrapper around the kit's
@@ -26,6 +34,20 @@ the sentinels in `game.toml` are real addresses and a smoke script exists;
 until then report them as not run, not as passing.
 
 ## Bring-up checks
+
+`smoke/pad-race.script` exercises the production mapped-pad binding, menu
+confirmation/back, a touch on Quit, steering, acceleration, braking and pause.
+Run it through the smoke host with `RECOMP_SMOKE_DRAWABLE=2420x1668`, the
+iPad's mod settings (1568x1080 guest frame), and an isolated
+`RECOMP_PROFILE_DIR`; never use a player's live save directory. Review the
+dumped menu/race frames as well as the exit status and console. Script
+completion proves input delivery, not that the intended game state appeared.
+
+The default racing preset uses cross for throttle, square for brake/reverse,
+left stick for steering, circle for handbrake, triangle for menu confirmation
+and Start for pause/back. The dpad navigates menus. These map to the game's
+default PC keyboard bindings; changing those in-game changes their meaning.
+The original executable uses DirectInput 8 and has no XInput import.
 
 `tools/analyze.py` leaves `analysis/decompiled/speed.exe/summary.txt` with
 the function count Ghidra discovered and how many decompiled.

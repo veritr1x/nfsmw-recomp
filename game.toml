@@ -145,6 +145,36 @@ data_seeds = [
     { addr = 0x00a37a54, value = 0x76667b12 },
 ]
 entry_points = [
+    # 00439cd0 -> 00439bb0 calls this method during race setup. The old
+    # parity seed 00410c00 bisected MOV [ESP+0x24],0 at 00410bfc, which
+    # withdrew both callers and left two arguments on the guest stack.
+    0x00410b00,
+    # Device crash at 0067f00e: JMP [EDX+0x70] reads vtable slot 008abca0.
+    # The method spans 00690100..0069022f. The old parity seed 00690200
+    # starts inside MOV [ECX+0xf4],EDX at 006901fc and blocks its recovery.
+    0x00690100,
+    # Additional vtable methods blocked by parity seeds inside instructions.
+    0x004497b0,  # vtable slot 008f7df0
+    0x00498dc0,  # vtable slot 00895964
+    0x004dd6f0,  # vtable slot 00899754
+    0x004e8690,  # vtable slot 0089936c
+    0x00510050,  # vtable slot 0089be6c
+    0x00534bd0,  # vtable slot 0089e824
+    0x00545310,  # vtable slot 0089e530
+    0x0054ff10,  # vtable slot 0089e5a4
+    0x00558af0,  # vtable slot 0089f044
+    0x006851d0,  # vtable slot 008aa948
+    0x006a0070,  # vtable slot 008abe5c
+    0x006a02f0,  # vtable slot 008ab6bc
+    0x006a04e0,  # vtable slot 008ab784
+    0x006a1170,  # vtable slot 008ab7dc
+    0x006a1270,  # vtable slot 008ab810
+    0x006a1430,  # vtable slot 008ab840
+    0x006a1ac0,  # vtable slot 008ab850
+    0x006a4c40,  # vtable slot 008abab0
+    0x006ac300,  # vtable slot 008abc50
+    0x007684e0,  # vtable slot 008b5b6c
+    0x007c1490,  # vtable slot 008b7e30
     0x006a8870,  # the unlisted function 0x006a8e70 jumps to; it holds the switch at 0x006a8a14
     0x006a8e70,  # a vtable thunk right after that switch's byte table; Ghidra read it as data
     0x0081a7a6,  # a vtable method in the codec region, missing from the listing
@@ -488,14 +518,15 @@ entry_points = [
   # from the PE, and main rejects them at three gates the older translator did
   # not have (a wide-string test, a withdrawn-span test, and "decoded into
   # something this compiler never emits"). Carrying them keeps the translation
-  # at parity - 36,698 functions against 36,718 - while the recovery gates are
-  # sorted out upstream. Regenerate this list by translating with the older
-  # translator and diffing recomp_func_addrs.
+  # at parity - originally 36,698 functions against 36,718 - while the recovery
+  # gates were sorted out upstream. That diff included false entries inside
+  # real instructions, which blocked methods reached on device. Verify each
+  # entry against original instruction boundaries and its callers or pointer
+  # tables; matching the older function count is not evidence that it is code.
   0x00404c24,
   0x00410800,
   0x00410885,
   0x004108ad,
-  0x00410c00,
   0x00414780,
   0x00414808,
   0x00414812,
@@ -543,7 +574,6 @@ entry_points = [
   0x00448d0e,
   0x00449000,
   0x00449044,
-  0x00449800,
   0x00454880,
   0x00454881,
   0x00459d00,
@@ -569,7 +599,6 @@ entry_points = [
   0x00498d12,
   0x00498d14,
   0x00498d20,
-  0x00498dfe,
   0x004a9550,
   0x004aec84,
   0x004aecd4,
@@ -580,9 +609,7 @@ entry_points = [
   0x004d8b00,
   0x004d8b10,
   0x004d8b11,
-  0x004dd700,
   0x004dd840,
-  0x004e86e4,
   0x004e8b20,
   0x004e8bd0,
   0x004e9b30,
@@ -614,8 +641,6 @@ entry_points = [
   0x0050008c,
   0x00504341,
   0x0050ede0,
-  0x0051008a,
-  0x0051008b,
   0x005121f0,
   0x00512249,
   0x0051e000,
@@ -625,17 +650,11 @@ entry_points = [
   0x00524c80,
   0x00531d40,
   0x00533030,
-  0x00534c00,
-  0x00545350,
-  0x00550055,
-  0x00550089,
   0x00550b80,
   0x00552570,
   0x005534f0,
   0x00553980,
   0x00553b09,
-  0x00558aff,
-  0x00558b00,
   0x00559fa0,
   0x0055af90,
   0x0055bd10,
@@ -660,25 +679,15 @@ entry_points = [
   0x00643090,
   0x006430c0,
   0x0064bf5d,
-  0x006851ff,
   0x0068587e,
   0x00687240,
-  0x00690200,
   0x00693c00,
-  0x006a007d,
-  0x006a0084,
-  0x006a0085,
-  0x006a0091,
-  0x006a0092,
-  0x006a02f8,
-  0x006a02f9,
   0x006a0445,
   0x006a0447,
   0x006a0448,
   0x006a044a,
   0x006a044d,
   0x006a0459,
-  0x006a04f7,
   0x006a0bf0,
   0x006a0c00,
   0x006a0c42,
@@ -692,17 +701,10 @@ entry_points = [
   0x006a0c7f,
   0x006a0cc4,
   0x006a0cec,
-  0x006a1174,
-  0x006a1274,
-  0x006a1450,
-  0x006a1c5e,
   0x006a1e70,
   0x006a2a74,
   0x006a2c70,
   0x006a2c71,
-  0x006a4c48,
-  0x006a4c4e,
-  0x006a4c74,
   0x006a5016,
   0x006a50c0,
   0x006a50c2,
@@ -726,8 +728,6 @@ entry_points = [
   0x006a5108,
   0x006a51e0,
   0x006a95f0,
-  0x006ac308,
-  0x006ac30c,
   0x006ae430,
   0x006db70f,
   0x006db8c3,
@@ -756,7 +756,6 @@ entry_points = [
   0x00757495,
   0x00758b14,
   0x00768300,
-  0x0076850f,
   0x00783820,
   0x007847a0,
   0x00784803,
@@ -783,7 +782,6 @@ entry_points = [
   0x007b4580,
   0x007b5750,
   0x007bff00,
-  0x007c1500,
   0x007c1770,
   0x007c2500,
   0x007c3b10,
@@ -887,10 +885,32 @@ sprites = []
 builtin = "none"
 
 [settings]
-# The F10 page's rows. The renderer rows drive Populous's Direct3D renderer
-# and frame loop; this game draws through Direct3D 9 and has no iPad build
-# for the keypad yet.
-rows = ["window", "performance_overlay"]
+# Renderer settings are supplied by this game's core mod. The shared page
+# also exposes touch layout selection and button remapping on the iPad.
+rows = ["window", "performance_overlay", "controls"]
+
+[controls]
+pad = "mapped"
+
+[controls.mapped]
+# Racing preset over the game's default PC keys. The 2005 executable reads
+# DirectInput, not XInput; generic native joystick defaults are not this layout.
+# Triangle confirms menus; Start pauses/goes back; dpad navigates menus.
+left_stick = "horizontal_arrows"
+right_stick = "cursor"
+dpad = "arrows"
+cross = "key:Up"
+square = "key:Down"
+circle = "key:Space"
+triangle = "key:Return"
+l1 = "key:Tab"
+r1 = "key:LShift"
+l2 = "key:Down"
+r2 = "key:Up"
+l3 = "none"
+r3 = "mouse_left"
+select = "key:C"
+start = "key:Escape"
 
 [launcher]
 # Opens when the executable is missing or wrong, with --launcher,

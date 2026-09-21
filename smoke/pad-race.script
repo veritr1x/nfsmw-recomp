@@ -1,0 +1,99 @@
+# Pad regression with the default keyboard bindings, at the iPad 2420x1668
+# drawable (guest frame 1568x1080). Use an isolated profile.
+# Triangle confirms, dpad navigates, cross accelerates, square brakes,
+# left stick steers and Start pauses/backs out of the touch-opened Quit dialog.
+# Inspect the dumped frames; successful script delivery alone is not proof
+# that the intended menu/race was reached.
+wait 20000
+dump intro
+pad triangle down
+wait 200
+pad triangle up
+wait 12000
+dump title
+pad triangle down
+wait 200
+pad triangle up
+wait 8000
+dump alias-question
+pad triangle down
+wait 200
+pad triangle up
+wait 8000
+dump main-menu
+tap 200 1020
+wait 2000
+peek 0x00987f50 32
+dump touch-quit
+pad start down
+wait 200
+pad start up
+wait 2000
+dump pad-back
+pad right down
+wait 200
+pad right up
+wait 2000
+dump menu-right-1
+pad right down
+wait 200
+pad right up
+wait 2000
+dump menu-right-2
+pad triangle down
+wait 200
+pad triangle up
+wait 5000
+dump quick-race
+pad triangle down
+wait 200
+pad triangle up
+wait 5000
+dump race-mode
+pad triangle down
+wait 200
+pad triangle up
+wait 5000
+dump track-select
+pad triangle down
+wait 200
+pad triangle up
+wait 5000
+dump next-1
+pad triangle down
+wait 200
+pad triangle up
+wait 5000
+dump next-2
+pad triangle down
+wait 200
+pad triangle up
+wait 30000
+dump loading
+wait 30000
+dump race-1
+wait 20000
+dump race-2
+pad cross down
+wait 6000
+dump accelerate
+pad left_x -24000
+wait 600
+dump steer-left
+pad left_x 0
+wait 600
+pad left_x 24000
+wait 600
+dump steer-right
+pad left_x 0
+pad cross up
+pad square down
+wait 1600
+dump brake
+pad square up
+pad start down
+wait 200
+pad start up
+wait 2000
+dump pause
+quit

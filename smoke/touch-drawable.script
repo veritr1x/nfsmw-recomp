@@ -1,0 +1,31 @@
+# Fixed-screen touch regression, with an isolated copy of an existing profile.
+# Guest 1280x720, drawable 2420x1668, automatic Metal render scale 2.375x.
+# Set core.nfsmw/width=1280 and core.nfsmw/height=720 in the test profile.
+# Tap the title prompt, Load complete/Continue and Quit at their visible
+# positions. Start dismisses Quit; the last tap shows the cursor at the right.
+# Inspect captures: successful event delivery alone is not a behavioral pass.
+wait 20000
+pad triangle down
+wait 200
+pad triangle up
+wait 12000
+dump title
+tap_drawable 1210 1265
+wait 8000
+dump load-confirmation
+tap_drawable 1210 1033
+wait 8000
+dump menu
+tap_drawable 490 1445
+wait 2000
+peek 0x00987f50 32
+dump touch-quit
+pad start down
+wait 200
+pad start up
+wait 2000
+dump back
+tap_drawable 1900 500
+wait 200
+dump cursor-right
+quit

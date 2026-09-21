@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+- Fix stick knobs not moving independently when dragging the touch gamepad.
+  Their visual positions now update while bases and touch zones stay put
+  during the drag.
+
+- Fix iPad touch and mouse targeting when the GPU renders above the game's
+  resolution; the cursor now uses the logical game frame rather than the
+  supersampled texture's size.
+
+- Give the touch gamepad a racing preset: cross accelerates, square brakes,
+  the left stick steers, circle applies the handbrake, triangle confirms
+  menus, and Start pauses/goes back. Vertical stick movement no longer
+  presses the throttle or brake.
+
+- Correct touch clicks displaced by the virtual window's desktop position,
+  including mouse messages processed after the original touch event.
+
+- Restore 25 routines reached during menu and race setup. Remove 34 false
+  translation entries inside instructions that blocked recovery, causing
+  indirect-jump crashes and stack corruption from skipped calls.
+
+- Preserve visible gamepad sticks and buttons when switching from a
+  collapsed keyboard.
+
+- Expose the Controls rows in the F10 settings page.
+
+- Keep tablet KEYS tabs and keyboard halves inside the system safe area.
+
+- Correct the red/blue swap in displayed GPU frames, restoring the original
+  green and warm tones in game graphics and movies.
+
+- Hide the on-screen keyboard HIDE/KEYS tabs when a hardware keyboard or
+  controller auto-hides the controls; retain the layout switch and saved visibility.
+
 - Re-pin the kit to `main` 30fb57d. The merge that landed this game's kit
   work on main had dropped 27 kernel32 import declarations; an import with no
   table entry has an unknown argument count, so every call to one leaked its
