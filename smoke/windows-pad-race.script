@@ -1,0 +1,100 @@
+# Windows 1280x720 mapped-pad, mouse targeting and race-control check.
+# Use tools/probe_windows.py; inspect the menu, speed, steering, brake and pause captures.
+wait 20000
+dump intro
+pad triangle down
+wait 200
+pad triangle up
+wait 12000
+dump title
+pad triangle down
+wait 200
+pad triangle up
+wait 8000
+dump alias-question
+pad triangle down
+wait 200
+pad triangle up
+wait 8000
+dump main-menu
+tap 250 680
+wait 2000
+peek 0x00987f50 32
+dump touch-quit
+pad start down
+wait 200
+pad start up
+wait 2000
+dump pad-back
+pad right down
+wait 200
+pad right up
+wait 2000
+dump menu-right-1
+pad right down
+wait 200
+pad right up
+wait 2000
+dump menu-right-2
+pad triangle down
+wait 200
+pad triangle up
+wait 5000
+dump quick-race
+pad triangle down
+wait 200
+pad triangle up
+wait 5000
+dump race-mode
+pad triangle down
+wait 200
+pad triangle up
+wait 5000
+dump track-select
+pad triangle down
+wait 200
+pad triangle up
+wait 5000
+dump next-1
+pad triangle down
+wait 200
+pad triangle up
+wait 5000
+dump next-2
+pad triangle down
+wait 200
+pad triangle up
+wait 30000
+dump loading
+wait 30000
+dump race-1
+wait 20000
+dump race-2
+pad cross down
+wait 6000
+dump accelerate
+pad left_x -24000
+wait 600
+dump steer-left
+pad left_x 0
+wait 600
+pad left_x 24000
+wait 600
+dump steer-right
+pad left_x 0
+pad cross up
+pad square down
+wait 1600
+dump brake
+pad square up
+pad start down
+wait 200
+pad start up
+wait 2000
+dump pause
+pad start down
+wait 200
+pad start up
+wait 2000
+dump resumed
+quit

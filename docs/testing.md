@@ -16,11 +16,11 @@ skip prerequisites. Every command is a wrapper around the kit's
 | Command | What it checks | Needs game files? |
 | --- | --- | --- |
 | `tools/test.py` | The kit's portable Python suites (setup, config, texture and display-mode tooling) | No |
-| `python -m pytest -q tests` | This repository's `game.toml` renders the hooks and globals the kit expects, and unidentified ones stay sentinels | No |
+| `python -m pytest -q tests` | Config hooks/globals remain valid and the Windows probe rejects missing core mods, guest faults and incomplete scripts | No |
 | `tools/build.py --stub` | The kit configures and links its hosts against this config without game code | No |
 | `tools/test.py --compile-only` | Every native test binary this platform has compiles | No |
 | `tools/test.py --native` | Runtime, adapters, offscreen Metal and UI tests; the `game`-labelled suites load the image | Yes for the `game` label |
-| `tools/test.py --mods`, `--gameplay`, `--integration` | Game-backed mod, gameplay and integration runs | Yes, plus a translated archive, which this game does not have yet |
+| `tools/test.py --mods`, `--gameplay`, `--integration` | Kit game-backed suites; currently Populous-shaped, see below | Yes; a translated archive alone does not make these appropriate for NFS |
 
 Native suites are CTest entries with labels: `nogame` runs everywhere and in
 the kit's CI, `game` needs your installation, `gpu` needs a Metal device,
@@ -54,3 +54,22 @@ the function count Ghidra discovered and how many decompiled.
 `tools/build.py --regenerate` writes `build/recomp/translate-report.json`;
 its unsupported-instruction and unresolved-target counts are the measure of
 translator coverage recorded in [analysis.md](analysis.md).
+
+
+## Native Windows checks
+
+Build the real smoke host through tools/build.py, then run:
+
+```powershell
+.venv/Scripts/python.exe tools/probe_windows.py --script smoke/title-to-menu.script --seconds 100 --toolchain /path/to/llvm-mingw
+.venv/Scripts/python.exe tools/probe_windows.py --script smoke/quick-race.script --seconds 300 --toolchain /path/to/llvm-mingw
+.venv/Scripts/python.exe tools/probe_windows.py --script smoke/windows-pad-race.script --seconds 300 --toolchain /path/to/llvm-mingw
+```
+
+Each invocation creates a new profile at build/windows-runs/entry-*/profile
+and verifies the original executable hash. --seed accepts only a profile owned
+by that probe tree. A run requires core.nfsmw to load, all steps to complete,
+exit zero and no reported mod rejections, missing/unknown calls or guest faults.
+Review the captures to confirm the intended menu/race/control behavior; these
+checks do not establish a full playthrough or eliminate an intermittent fault.
+The required shared kit correction is documented in [analysis.md](analysis.md).

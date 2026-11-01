@@ -45,7 +45,7 @@ def main():
         sys.exit("Set --ghidra-home or GHIDRA_HOME to the extracted Ghidra %s directory" % GHIDRA_VERSION)
     ghidra = args.ghidra_home.expanduser().resolve()
     properties = ghidra / "Ghidra/application.properties"
-    if not properties.is_file() or "application.version=%s\n" % GHIDRA_VERSION not in properties.read_text():
+    if not properties.is_file() or "application.version=%s\n" % GHIDRA_VERSION not in properties.read_text(encoding="utf-8"):
         sys.exit("Use Ghidra %s; set --ghidra-home to its extracted directory" % GHIDRA_VERSION)
     cfg = load_game_config().load(ROOT)
     exe = cfg["developer_exe_path"]
@@ -64,15 +64,16 @@ def main():
     project = output.parent / "ghidra"
     project.mkdir(parents=True, exist_ok=True)
     output.mkdir(parents=True, exist_ok=True)
+    headless = ghidra / "support" / ("analyzeHeadless.bat" if os.name == "nt" else "analyzeHeadless")
     command = [
-        str(ghidra / "support/analyzeHeadless"), str(project), cfg["game"]["app_name"],
+        str(headless), str(project), cfg["game"]["app_name"],
         "-import", str(exe), "-deleteProject",
         "-scriptPath", str(KIT / "tools"),
         "-postScript", "ExportProgram.java", str(output),
     ]
     subprocess.run(command, cwd=ROOT, env=env, check=True)
     index = listings / "functions.tsv"
-    if not index.is_file() or len(index.read_text().splitlines()) < 2:
+    if not index.is_file() or len(index.read_text(encoding="utf-8").splitlines()) < 2:
         sys.exit("Ghidra did not export a function index; inspect its output")
     (output / "inputs.json").write_text(json.dumps({
         "executable_sha256": cfg["game"]["sha256"],
