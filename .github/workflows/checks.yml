@@ -41,10 +41,13 @@ jobs:
       - name: Enter the Visual Studio developer environment (Windows)
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: "22"
       - name: Contributor tools
         run: |
           python3 -m venv .venv
-          ${{ matrix.python }} -m pip install -r kit/requirements-dev.txt
+          ${{ matrix.python }} -m pip install --require-hashes --only-binary=:all: -r kit/requirements.lock
       - name: Portable tests (the kit's suites plus this game's config)
         run: |
           ${{ matrix.python }} tools/test.py

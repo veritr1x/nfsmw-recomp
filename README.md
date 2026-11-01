@@ -87,7 +87,7 @@ builds the app.
 git clone --recurse-submodules https://github.com/veritr1x/nfsmw-recomp.git
 cd nfsmw-recomp
 python3 -m venv .venv
-.venv/bin/python -m pip install -r kit/requirements-dev.txt
+.venv/bin/python -m pip install --require-hashes --only-binary=:all: -r kit/requirements.lock
 .venv/bin/python tools/setup.py --install "/path/to/Need For Speed Most Wanted Black Edition" --link-only
 .venv/bin/python tools/analyze.py --ghidra-home /path/to/ghidra_12.1.3_PUBLIC
 .venv/bin/python tools/build.py --regenerate --allow-table-gaps "MSVC 7.1 switch shapes; see docs/analysis.md"

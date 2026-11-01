@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Pin the shared kit to `a18ccaf`, including the reviewed runtime, renderer
+  and translator fixes and bounded GetDIBits conversion. Use the hashed
+  contributor dependency lock in setup and CI.
+
 - Fix stick knobs not moving independently when dragging the touch gamepad.
   Their visual positions now update while bases and touch zones stay put
   during the drag.

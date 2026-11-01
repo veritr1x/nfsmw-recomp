@@ -1163,3 +1163,17 @@ records cross held (`buttons 0001`) while the left stick moves from 0.55 to
 release. This confirms simultaneous pad routing on the iPad. The keyboard
 pairs were verified locally; no physical keyboard-layout chord was captured
 in this check. No application update was required.
+
+
+## Shared kit validation, 2026-11-01
+
+Pin `a18ccafa1e8c98002b2d3f7347b64fa655ebb018` is the merged recomp-kit PR #46 source.
+Its tree matches the reviewed `b1bdfd6` head: all 14 platform CI checks and
+44 game-independent Windows native suites pass. The shared portable suite
+passes 651 tests with four platform skips.
+
+The matching speed.exe installation is unavailable. Validation is limited to configuration, stub hosts and synthetic loader coverage; no new runtime claim is made.
+
+These are bounded checks using hash-matched inputs and isolated profiles.
+Movies were disabled; full campaigns, performance and new physical-device
+validation are not established. Original inputs and player saves are preserved.
