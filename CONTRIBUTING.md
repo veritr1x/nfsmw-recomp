@@ -59,8 +59,8 @@ does not have.
 .venv/bin/python tools/build.py --jobs 8                # afterwards
 ```
 
-The translation is where the bring-up currently stops; see
-[docs/analysis.md](docs/analysis.md) for the state of it. `--target ios`
+For current translation and bounded runtime results, see
+[docs/analysis.md](docs/analysis.md). `--target ios`
 builds, signs and installs the iPad app (`RECOMP_IOS_TEAM` or `--team`) once
 a macOS build runs. The CMake tree lives in `build/cmake/<preset>`.
 

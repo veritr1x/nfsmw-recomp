@@ -16,11 +16,11 @@ skip prerequisites. Every command is a wrapper around the kit's
 | Command | What it checks | Needs game files? |
 | --- | --- | --- |
 | `tools/test.py` | The kit's portable Python suites (setup, config, texture and display-mode tooling) | No |
-| `python -m pytest -q tests` | This repository's `game.toml` renders the hooks and globals the kit expects, and unidentified ones stay sentinels | No |
+| `python -m pytest -q tests` | Config hooks/globals remain valid and the Windows probe rejects missing core mods, guest faults and incomplete scripts | No |
 | `tools/build.py --stub` | The kit configures and links its hosts against this config without game code | No |
 | `tools/test.py --compile-only` | Every native test binary this platform has compiles | No |
 | `tools/test.py --native` | Runtime, adapters, offscreen Metal and UI tests; the `game`-labelled suites load the image | Yes for the `game` label |
-| `tools/test.py --mods`, `--gameplay`, `--integration` | Game-backed mod, gameplay and integration runs | Yes, plus a translated archive, which this game does not have yet |
+| `tools/test.py --mods`, `--gameplay`, `--integration` | Kit game-backed suites; currently Populous-shaped, see below | Yes; a translated archive alone does not make these appropriate for NFS |
 
 Native suites are CTest entries with labels: `nogame` runs everywhere and in
 the kit's CI, `game` needs your installation, `gpu` needs a Metal device,
