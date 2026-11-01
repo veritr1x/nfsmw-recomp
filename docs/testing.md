@@ -54,3 +54,22 @@ the function count Ghidra discovered and how many decompiled.
 `tools/build.py --regenerate` writes `build/recomp/translate-report.json`;
 its unsupported-instruction and unresolved-target counts are the measure of
 translator coverage recorded in [analysis.md](analysis.md).
+
+
+## Native Windows checks
+
+Build the real smoke host through tools/build.py, then run:
+
+```powershell
+.venv/Scripts/python.exe tools/probe_windows.py --script smoke/title-to-menu.script --seconds 100 --toolchain /path/to/llvm-mingw
+.venv/Scripts/python.exe tools/probe_windows.py --script smoke/quick-race.script --seconds 300 --toolchain /path/to/llvm-mingw
+.venv/Scripts/python.exe tools/probe_windows.py --script smoke/windows-pad-race.script --seconds 300 --toolchain /path/to/llvm-mingw
+```
+
+Each invocation creates a new profile at build/windows-runs/entry-*/profile
+and verifies the original executable hash. --seed accepts only a profile owned
+by that probe tree. A run requires core.nfsmw to load, all steps to complete,
+exit zero and no reported mod rejections, missing/unknown calls or guest faults.
+Review the captures to confirm the intended menu/race/control behavior; these
+checks do not establish a full playthrough or eliminate an intermittent fault.
+The required shared kit correction is documented in [analysis.md](analysis.md).

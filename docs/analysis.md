@@ -1177,3 +1177,55 @@ The matching speed.exe installation is unavailable. Validation is limited to con
 These are bounded checks using hash-matched inputs and isolated profiles.
 Movies were disabled; full campaigns, performance and new physical-device
 validation are not established. Original inputs and player saves are preserved.
+
+
+## Native Windows validation, 2026-11-01
+
+The supplied Black Edition installation contains the exact pinned speed.exe:
+SHA-256 `80774c2e5d619b4f120b48d4462896fd504c263399d203a238769cffde1d253c`.
+It is linked into ignored original/retail; original files and player profiles
+are preserved. Windows uses analyzeHeadless.bat; analysis metadata is UTF-8.
+Ghidra 12.1.3 with Java 24.0.1 exports 25,768 functions and decompiles all of them.
+
+Strict translation emits 36,385 of 36,392 recovered/discovered functions, 41,910
+entries and 183 chunks in 266.5 seconds. Seven speculative blocks are withdrawn.
+It recovers all 836 CRT static initializers from four tables, reports zero
+recovery failures, unsupported instructions, table gaps, undecoded sites and
+stale alternate entries. No allow-table-gaps or allow-unmodelled override is
+used. The Windows x64 LLVM-MinGW app, smoke and headless hosts all link through
+the kit build API. FFmpeg is disabled in this build; the game decodes its own
+VP6 cinematics, and its intro renders.
+
+The first menu probe completed all 10 steps with 4,404 frames and exit zero,
+but rejected core.nfsmw with Windows error 126. Building the app had installed
+resources/mods/core manifests for its embedded plugins, and the diagnostic
+host searched that shared resource tree for an absent DLL. It ran at 640x480
+without the mod's hooks. Script completion alone concealed the configuration
+failure. Kit `081b591` embeds the same core mods in Windows/Linux diagnostic
+hosts as in the app, while preserving existing dynamic-core build dependencies.
+
+With that fix, the required mod loads, sets 120 Hz and creates the requested
+1280x720 device. A fresh menu probe completes all 10 steps with 8,136 frames
+and exit zero. A fresh quick-race probe completes 41/41 steps with 26,800
+frames: the car accelerates to 82 mph and reaches 6% progress. A second fresh
+race uses the Windows pad script: mouse opens Quit, Start dismisses it, and
+captures show acceleration, left/right steering, a stop during brake input, pause and resume.
+It completes all 61 steps with 24,807 frames and exit zero. Neither race
+reports rejected mods, missing imports, unknown transfers or guest faults.
+Audio counters report nonzero PCM; audible device output is not tested.
+
+A separate bounded headless boot also loads core.nfsmw and exits zero,
+confirming that both corrected diagnostic hosts can load the embedded mod.
+
+The probe now fails if core.nfsmw is absent/rejected, the script is incomplete,
+the process fails, or guest faults/missing transfers are logged. Its three
+asset-free regressions plus the four config tests pass. All runs use new
+profiles under build/windows-runs; no personal profile is seeded. These are
+bounded Windows checks, not full campaigns, a performance benchmark or a
+statistical resolution of the historically intermittent loading failure.
+Historical macOS/iPad/Linux/browser observations above are not fresh checks.
+
+Ignored evidence: build/analyze.log, build/recomp/translate-report.json,
+build/windows-validation-build.log, and build/windows-runs/entry-_9kr2aex,
+entry-324l0viw, entry-tc8drwza and entry-3_xd6anl. The first case is the rejected
+mod baseline; the remaining cases validate the corrected diagnostic host.

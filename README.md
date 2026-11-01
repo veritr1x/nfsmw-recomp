@@ -33,38 +33,37 @@ is accepted.
 
 ## Status: plays through the menus; a scripted race completes intermittently
 
-The game boots, renders its front end and career menus, reaches track select
-and drives a race. What it does not do yet is do so reliably: of five runs of
-`smoke/quick-race.script` on macOS, one or two play the script to the end and
-exit cleanly, and the rest hang entering race loading and are stopped by the
-watchdog. The cause is known to be a timing-dependent failure in the loading
-path and is the port's open blocker; the mechanism, the measurements and the
-dead ends are in [docs/analysis.md](docs/analysis.md).
+Recorded macOS runs booted, rendered the menus and drove a race, but only one
+or two of five scripted runs completed; the others stopped during race loading.
+Fresh Windows checks on 2026-11-01 entered and drove two races and exited cleanly,
+including mapped-pad/mouse controls. Those bounded results do not establish
+that the older timing-dependent loading failure is eliminated. The measurements
+and platform-specific evidence are in [docs/analysis.md](docs/analysis.md).
 
 ## Platform status
 
-Status as of 2026-09-19, from the [run log](docs/analysis.md). macOS is the
-only platform re-checked against the current kit pin; the others were
-verified against an earlier one and are marked accordingly.
+The rows retain their recorded platform-specific scope. Windows was checked
+on 2026-11-01 with the shared diagnostic-host mod correction; other platform
+runtime observations below are historical. See the [run log](docs/analysis.md).
 
 | Platform | Verified status | Build command | Known issues and remaining checks |
 | --- | --- | --- | --- |
 | macOS 14+ | Boots, renders the front end and career menus on Metal, reaches track select and a race. One to two runs in five play `smoke/quick-race.script` to the end with `guest exit code 0`. | `.venv/bin/python tools/build.py` (app); `--target smoke` | The intermittent hang entering race loading is open and is the blocker. Performance is unmeasured on this pin: the 4K figures below predate it and cannot be re-measured until a run reaches gameplay reliably. |
 | iPadOS 17+ | Played by touch on an earlier kit pin, with the core mods compiled into the app, which a stock device needs because it loads no plugins. | `.venv/bin/python tools/build.py --target ios --console` | Not re-checked since the kit gained restored kernel32 imports, new recovery arbitration and 836 static initializers. |
 | Linux | Rendered the race on an earlier pin, including under software Vulkan (lavapipe). | `.venv/bin/python tools/build.py --regenerate` | Not re-checked on the current pin. |
-| Windows | Cross-compiled with llvm-mingw and ran the test script at 100-170 fps under CrossOver on an earlier pin. | `--preset windows-cross` | Never run on Windows hardware. Not re-checked on the current pin. |
+| Windows | Native Windows x64 LLVM-MinGW/Vulkan: fresh menu and two quick-race probes pass at 1280x720 with core.nfsmw loaded. Captures show acceleration, steering, mouse targeting, brake input and pause/resume; both runs exit zero. | `tools/build.py --target smoke`; `tools/probe_windows.py --toolchain /path/to/llvm-mingw` | Bounded checks, not a full campaign or performance measurement. Two passes do not establish that the historical intermittent loading failure is eliminated. |
 | The browser | WebGPU in Chrome and Safari on an earlier pin: the game runs on a worker and reads its files from the browser's private storage; a race ran at 113-166 fps. | `.venv/bin/python tools/build.py --target web` | Reading a render target back is unsupported there. Not re-checked on the current pin. |
 
-### Known issues
+### Historical issues and remaining checks
 
 - **The race-loading hang.** A scripted race completes one or two runs in
   five. The main thread spins in a translated function rather than deadlocking,
   so the watchdog reports it as the guest no longer calling into the runtime.
   Every instrument tried so far moves it; `sample` on the hung process is the
   one measurement that does not.
-- **Shutdown.** A guest worker outlives the run, which the smoke host reports
-  as exit code 4. Pharaoh, Siege and Populous have teardown failures of the
-  same family; it is a kit-level item rather than this game's.
+- **Shutdown.** Older smoke runs reported a guest worker outliving the run
+  (exit code 4). The fresh Windows menu and race checks exit zero; other
+  platform runtime checks have not been repeated for this checkpoint.
 - **Earlier per-platform figures.** The 4K and browser numbers quoted above
   were measured before the current kit pin and are kept as history, not as
   claims about it.
@@ -90,7 +89,7 @@ python3 -m venv .venv
 .venv/bin/python -m pip install --require-hashes --only-binary=:all: -r kit/requirements.lock
 .venv/bin/python tools/setup.py --install "/path/to/Need For Speed Most Wanted Black Edition" --link-only
 .venv/bin/python tools/analyze.py --ghidra-home /path/to/ghidra_12.1.3_PUBLIC
-.venv/bin/python tools/build.py --regenerate --allow-table-gaps "MSVC 7.1 switch shapes; see docs/analysis.md"
+.venv/bin/python tools/build.py --regenerate
 ```
 
 `tools/setup.py`, `tools/build.py`, `tools/test.py` and `tools/ios_logs.py`

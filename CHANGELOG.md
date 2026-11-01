@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Run Ghidra's Windows launcher and read analysis metadata as UTF-8.
+- Add an isolated Windows runtime probe that requires the engine/widescreen
+  mod to load and fails on rejected mods or guest faults, plus a 1280x720
+  mapped-pad/mouse/race-control script. Pin the shared diagnostic-host mod fix.
+
 - Pin the shared kit to `a18ccaf`, including the reviewed runtime, renderer
   and translator fixes and bounded GetDIBits conversion. Use the hashed
   contributor dependency lock in setup and CI.
