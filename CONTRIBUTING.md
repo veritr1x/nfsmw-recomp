@@ -10,7 +10,7 @@ keeping [docs/analysis.md](docs/analysis.md) true.
 
 ## Prerequisites
 
-- Python 3.9 or later; create `.venv` and install `kit/requirements-dev.txt`.
+- Python 3.9 or later; create `.venv` and install `kit/requirements.lock` with `pip --require-hashes --only-binary=:all:`.
 - Native builds on macOS: Apple Silicon, Xcode Command Line Tools and Git.
   CMake and Ninja come from the requirements file. iPad builds need Xcode
   with the iOS SDK and a developer team.
