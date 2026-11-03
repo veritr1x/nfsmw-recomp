@@ -1,0 +1,8 @@
+{
+  "$schema": "https://recomp.fyi/schema/v1.json",
+  "game": "Need for Speed: Most Wanted",
+  "system": "PC (Windows)",
+  "type": "recomp",
+  "toolchain": "recomp-kit",
+  "status": "in-progress"
+}

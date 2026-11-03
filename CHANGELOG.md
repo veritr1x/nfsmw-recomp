@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Publish `.recomp.json` project metadata for discovery tools, with a
+  contributor reminder to keep its status aligned with the README.
+
 - Run Ghidra's Windows launcher and read analysis metadata as UTF-8.
 - Add an isolated Windows runtime probe that requires the engine/widescreen
   mod to load and fails on rejected mods or guest faults, plus a 1280x720

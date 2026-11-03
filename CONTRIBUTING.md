@@ -79,3 +79,7 @@ See [docs/testing.md](docs/testing.md).
 
 `git -C kit checkout <commit>` then commit the submodule pointer here, with a
 changelog line naming what changed. Keep the pin on a kit tag when one exists.
+
+Keep `.recomp.json` in sync with the README when project status changes.
+Its format is defined by [recomp.board](https://recomp.fyi/spec) (CC BY 4.0).
+Use only documented status and release evidence; omit unverified fields.
