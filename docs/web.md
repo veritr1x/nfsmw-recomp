@@ -116,3 +116,25 @@ profile reload, normal folder import with zero asset GETs, switching an
 imported profile to streaming, and import-only metadata. These are bounded
 bring-up checks, not a completed race, campaign or performance benchmark.
 See [analysis.md](analysis.md) for measurements and remaining limits.
+
+## Shared kit refresh
+
+Refreshed recomp-kit to `1cbd81ca8e6e1ef2cf33f1c27a06f69a00e64b82`,
+including upstream main, optional explicit full-installation streaming sources,
+and the WebGPU fixes found while testing other kit games. The full real web
+build passes with Emscripten 6.0.11. A fresh Chromium 145 hardware-WebGPU context
+streamed the 1,395-file installation, saved a new NetMat alias, entered a quick
+race, accelerated, steered and paused/resumed. No JavaScript exception, failed
+asset request or WebGPU validation error was observed; the OPFS game directory
+remained empty. Seven portable project tests pass.
+
+The earlier folder-import, source-switch and profile-reload evidence above
+is retained; this refresh separately reran streaming and alias creation, not
+the full import matrix. These checks do not establish a completed race,
+prolonged stability, audible output, other browsers or resolution of every
+historical intermittent loading fault. Private evidence is under the kit's
+ignored `build/web-matrix` directory.
+
+For a separate full installation when analysis uses a minimal copy, use
+`--stream "nfsmw=/path/to/full installation"`. Staging still validates the
+pinned executable and leaves the configured analysis source unchanged.

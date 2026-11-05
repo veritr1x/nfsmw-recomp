@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Refresh the shared kit to `1cbd81c`, including latest upstream main and
+  the cross-game WebGPU fixes. Rebuild and recheck the streamed quick race,
+  controls, pause/resume and a new saved alias against this pin.
+
 - Enable optional asset streaming through our kit: `--stream nfsmw` stages
   the private installation and offers Stream game alongside folder import.
   Use a corrected fetch backend with a 64 MiB cache and read-only game data;
