@@ -56,6 +56,26 @@ its unsupported-instruction and unresolved-target counts are the measure of
 translator coverage recorded in [analysis.md](analysis.md).
 
 
+## Browser streaming checks
+
+Build the web engine and serve the optional installation as described in
+[web.md](web.md). Use disposable browser contexts and profiles. Check Stream
+game before importing anything, then folder import and Play using the same
+engine. The stream must boot `/data/speed.exe`; the import must boot
+`/opfs/nfsmw/game/speed.exe` without game-asset network requests. Confirm
+`core.nfsmw` loads, enter a quick race, accelerate, steer, brake and pause/resume.
+Review screenshots rather than treating input dispatch as gameplay evidence.
+
+Save/reload in streaming mode with an empty OPFS game directory. In a second
+context, create a profile from an imported game, switch to Stream game and
+confirm it reloads without modifying the import. Remove streaming metadata
+to verify the original import-only UI and default imported launch. Exercise
+missing and malformed manifests; both should allow returning to folder import.
+Record asset traffic, browser/GPU and bounded scope alongside the captures.
+The kit's streaming, launcher and CSP suites cover byte fixtures and real HTTP
+range responses without requiring the game. Persistent offline caching, full
+races/career, audible output and Safari require separate checks.
+
 ## Native Windows checks
 
 Build the real smoke host through tools/build.py, then run:

@@ -2,11 +2,17 @@
 
 ## Unreleased
 
+- Enable optional asset streaming through our kit: `--stream nfsmw` stages
+  the private installation and offers Stream game alongside folder import.
+  Use a corrected fetch backend with a 64 MiB cache and read-only game data;
+  saves remain in OPFS and survive switching sources. Validate streamed and
+  imported quick-race controls, save reload and manifest-failure recovery.
+
 - Validate browser playback from our own sources on Windows/Emscripten:
   installation import, alias creation/save/reload and quick-race controls.
   Pin kit `60d77ae` for optimized Wasm linking, bounded startup, zero-size
   canvas handling and single-delivery keyboard text. Document the complete
-  browser workflow and the remaining optional streaming work.
+  browser workflow; optional streaming is added in the entry above.
 
 - Publish `.recomp.json` project metadata for discovery tools, with a
   contributor reminder to keep its status aligned with the README.

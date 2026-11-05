@@ -62,44 +62,57 @@ The Docker entrypoint in NFS issue #3 uses another fork's `--asset-dir`
 option; that is not part of this launcher's import workflow. Its separate
 `server.py` is not invoked by that entrypoint.
 
-## Optional streaming work
+## Optional streaming
 
-[recomp-kit issue #48](https://github.com/veritr1x/recomp-kit/issues/48)
-proposes fetching game data from the hosting server in ranges, keeping
-saves in OPFS. That is separate from this import-and-play workflow. Do not
-mix another fork's player or asset manifest into this build: its browser
-loader, native filesystem mount and range server must agree.
+The kit now implements the optional hosted installation described in
+[recomp-kit issue #48](https://github.com/veritr1x/recomp-kit/issues/48).
+After the same setup and web build above, stage and serve it with:
 
-The proposal was welcomed upstream, but no linked implementation is merged
-as of 2026-11-05. An implementation in our kit needs three connected parts:
+```powershell
+& .venv/Scripts/python.exe kit/tools/web_launcher.py --game-dir "$PWD" --out build/web-stream-site --web-build nfsmw=build/web/recomp --stream nfsmw --serve 2027
+```
 
-1. An opt-in launcher flag that stages the configured installation and a
-   file manifest, honoring bundle exclusions and prepared auxiliary modules.
-   The server must support HEAD, valid byte ranges and isolation headers.
-2. A player that selects the hosted manifest when present and retains the
-   existing import flow when it is absent. The executable path must agree
-   with the selected filesystem; the profile must still point to OPFS.
-3. A read-only WasmFS fetch mount on the game worker before loading the
-   executable, with correct file sizes, directory enumeration and mixed-case
-   path resolution. Memory caching needs an explicit bound for long sessions.
+Open `http://localhost:2027/` and choose **Stream game**. This copies the
+configured installation into the private local site, checks the executable
+hash and writes `nfsmw/data/manifest.txt`. It honors the bundle exclusions
+and prepared auxiliary modules. The source installation is unchanged.
+Staging uses about 2.8 GiB of server disk for the tested installation; the
+browser downloads requested files or chunks instead of importing that data.
+Keep this generated site private, like the source game files.
 
-There is a verified SDK blocker before enabling that mount. Emscripten
-6.0.11's `libwasmfs_fetch.js` loses bytes when a whole-file download is later
-read across a backend chunk boundary. A synthetic 12-byte file with 8-byte
-chunks reproduced it locally: the second read reported eight bytes but the
-last four were zero. The proposed early return for an already downloaded
-whole file preserved all twelve bytes in the same test. This was a JavaScript
-backend probe, not a compiled streaming game test.
+The native worker mounts the manifest's files read-only at `/data`, before
+loading and verifying `speed.exe`. File sizes come from the manifest so
+directory scans do not download every asset. Fetches use 4 MiB chunks and a
+64 MiB memory cache with eviction/refetch. The linked kit backend corrects
+Emscripten 6.0.11's whole-file offset bug across chunk boundaries, including
+our 6,029,312-byte executable. Its MIT notice ships with the player; the
+installed SDK is unchanged. See the
+[upstream fix](https://github.com/emscripten-core/emscripten/pull/28071).
 
-The [upstream fix](https://github.com/emscripten-core/emscripten/pull/28071)
-is still open at this review. With the proposal's 4 MiB chunks, our
-6,029,312-byte `speed.exe` falls in the affected whole-file size range. Range
-support alone therefore does not remove the need for a corrected backend.
-Use a verified fixed SDK or a narrowly maintained replacement with its MIT
-notice before testing the mount. Leave the installed SDK unmodified.
+**Import folder**, ZIP import and **Play** remain available. Play selects
+the imported installation; Stream game explicitly selects hosting even if
+an import exists. A direct player URL prefers a valid imported installation,
+then the configured stream. Both use the same OPFS profile at a given
+origin, so switching modes preserves saves. `?source=import` and
+`?source=stream` also select a mode explicitly. Without streaming metadata,
+the existing import-only launcher and player continue to work.
 
-Acceptance checks should cover the executable's full hash, reads straddling
-chunk boundaries, a server that returns a whole file despite Range, missing
-and truncated responses, read-only game data, save/reload in OPFS, a real
-quick race and fallback to an already imported installation. Persistent
-download caching is a separate follow-up to the proposed memory-only cache.
+Omitting `--stream` copies no installation files and removes streaming
+metadata. It does not delete previously staged data: use a separate output
+directory for an import-only distribution. The standard build's
+`build/web-site` remains import-only.
+
+The supplied local server handles HEAD, single byte ranges, Content-Length,
+Content-Range and COOP/COEP. A different host must preserve these semantics
+and use the same origin for the player and assets. Files above 64 MiB require
+range support; smaller whole-file responses are supported with exact size
+checks. Missing, truncated and malformed responses fail instead of supplying
+corrupt bytes. Missing or invalid manifests offer a return to the launcher
+to retry or import a copy. Streaming has no persistent offline download
+cache; OPFS saves persist independently.
+
+Windows/Chromium checks cover a streamed quick race, driving and pause/resume,
+profile reload, normal folder import with zero asset GETs, switching an
+imported profile to streaming, and import-only metadata. These are bounded
+bring-up checks, not a completed race, campaign or performance benchmark.
+See [analysis.md](analysis.md) for measurements and remaining limits.

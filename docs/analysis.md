@@ -1285,11 +1285,11 @@ Windows symlink privileges, and one lacked native Clang on PATH. The Clang
 case passes when rerun with the installed compiler; the three privilege
 failures remain recorded, rather than being counted as passes.
 
-The streaming review is separate from these playback results. Issue #48's
-proposal is not integrated. A synthetic probe of the installed SDK's fetch
+At the initial review, streaming was separate from these playback results
+and issue #48's proposal was not integrated. A probe of the installed SDK's fetch
 backend reproduces cross-chunk data loss and verifies the proposed early
 return for a whole-file cache; no SDK files are modified. The required
-server/player/mount work and acceptance checks are recorded in web.md.
+server/player/mount work is implemented and checked in the follow-up below.
 
 Ignored evidence: `build/web-baseline.log`, `build/web-fixed-build.log`,
 `build/web-input-build.log`, `build/web-final-portable.log`,
@@ -1305,3 +1305,71 @@ Ignored evidence: build/analyze.log, build/recomp/translate-report.json,
 build/windows-validation-build.log, and build/windows-runs/entry-_9kr2aex,
 entry-324l0viw, entry-tc8drwza and entry-3_xd6anl. The first case is the rejected
 mod baseline; the remaining cases validate the corrected diagnostic host.
+
+### Optional web asset streaming — 2026-11-05
+
+Kit `474d7ff` adds the staged manifest, launcher selection, native read-only
+WasmFS mount and corrected fetch backend entirely within our repositories.
+The SDK remains Emscripten 6.0.11, without local SDK edits. The same generated
+translation is reused and the real web engine is rebuilt through
+`tools/build.py --target web --jobs 4`. Its Wasm is 138,142,031 bytes. Staging
+with `--stream nfsmw` copies 1,395 files totaling 3,027,336,613 bytes from the
+configured installation, honors exclusions and leaves the source untouched.
+
+Fresh Chromium 145 contexts on the Windows NVIDIA hardware WebGPU adapter
+exercise both sources. Streaming mounts 1,395 read-only files at `/data`,
+loads `core.nfsmw` and boots the pinned `speed.exe`. The normal executable
+hash validation succeeds through the compiled fetch filesystem. OPFS's
+game directory is empty before and after playback; only the profile is
+stored there. A sample during startup records 17 distinct asset/manifest
+URLs and 43,730,571 GET bytes, rather than a full installation download.
+This is an observation during intro playback, not a first-frame benchmark.
+
+The streamed quick race is Beacon & Station, a 5.5-mile sprint with a
+Chevrolet Cobalt SS and three opponents. It loads the track and visibly
+accelerates, steers, brakes, pauses and resumes. Network evidence records
+429,991,284 GET bytes during the bounded run, including 206 range responses,
+with no missing asset responses or backend read failures. The disposable
+`NetQA` profile saves and reloads to Load complete after a fresh engine boot.
+No page exceptions, WebGPU validation errors, rejected core mods, missing
+imports, guest memory faults or watchdog failures are reported. Existing
+guest diagnostic warnings and an unrelated favicon 404 remain.
+
+A separate context uses the normal Import folder control to copy all 1,395
+files. Play boots `/opfs/nfsmw/game/speed.exe`, loads the core mod and accepts
+quick-race acceleration, steering, braking and pause/resume. It makes zero
+game-asset GETs. Its disposable `NAMEDis` profile saves, then an explicit
+Stream game launch on that same origin reloads it successfully. The imported
+executable remains 6,029,312 bytes with the matching import stamp. Removing
+streaming metadata hides Stream game, keeps Play enabled and defaults the
+direct player URL to the imported installation, again without asset GETs.
+
+Injected missing-manifest responses fail before boot with a helpful status.
+An invalid manifest reaches the compiled mount and reports
+`[stream] failed: unsupported asset manifest`; its Back to the launcher link
+returns to an enabled Import folder control. Launcher and player checks at
+1280x800 and 800x600 fit without horizontal scrolling; the new controls wrap
+within the game card at the smaller size.
+
+Validation: 74 focused kit/game Python tests pass in the game environment.
+After adding the import-only staging assertion, a final 49-test game,
+streaming, launcher, CSP and build-tool run passes. Node fixture suites cover the SDK's small
+whole-file cross-chunk corruption, ranged reads, EOF, bounded cache eviction
+and refetch, URL encoding, ignored Range, missing/truncated/malformed
+responses and read-only writes. Python exercises actual local HTTP HEAD,
+range and error responses plus private staging. The Windows native
+`platform_tests` passes, including the new read-only platform abstraction;
+native test compilation uses the kit build API. The real Wasm stub and full
+game builds pass. Formatting checks 416 native sources; game-literal,
+tracked-source and local documentation checks pass.
+
+Ignored evidence includes `build/stream-web-build.log`,
+`build/stream-game-tooling.log`, `build/stream-gameplay-evidence.json`,
+`build/stream-import-evidence.json`, `build/stream-final-qa.json` and
+`build/stream-*.png`. The standalone kit's native platform log is
+`build/stream-platform-tests.log`. These are bounded gameplay/control checks,
+not a completed race/campaign, memory/performance benchmark or proof that
+the historical intermittent race-loading fault is eliminated. The 64 MiB
+bound is for the download cache, not total game/browser memory. Persistent
+offline downloads, audible output, browser restart, Safari and prolonged
+session stability remain unverified.
