@@ -66,6 +66,10 @@ a macOS build runs. The CMake tree lives in `build/cmake/<preset>`.
 
 ## Check your change
 
+For Emscripten builds and local browser playback, follow
+[the web instructions](docs/web.md). They use this repository's normal
+setup/build wrappers and its pinned kit, without another port's launcher.
+
 ```sh
 .venv/bin/python tools/test.py             # the kit's portable suites; no game files required
 .venv/bin/python -m pytest -q tests        # this repository's config tests

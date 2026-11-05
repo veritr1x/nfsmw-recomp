@@ -1225,6 +1225,82 @@ bounded Windows checks, not full campaigns, a performance benchmark or a
 statistical resolution of the historically intermittent loading failure.
 Historical macOS/iPad/Linux/browser observations above are not fresh checks.
 
+## Browser validation from our sources, 2026-11-05
+
+The full Windows/Emscripten build uses this repository (starting at
+`e7f12a5`) and our recomp-kit, starting at `081b591` and updated to local
+`60d77ae`. No other game/runtime fork supplies sources or browser assets.
+The existing hash-matched installation and our earlier Ghidra/translation
+outputs are reused; analysis and translation were not repeated in this run.
+A fresh game-repo virtual environment installs `kit/requirements.lock`
+with hash checking. Emscripten 6.0.11 builds through `tools/build.py --target
+web`, then the kit's launcher serves the generated site with isolation
+headers. The working steps are in [web.md](web.md).
+
+The first build links successfully but ships a 571,313,665-byte Wasm module
+with DWARF debug sections and selects the unoptimized WebGPU binding. Kit
+`ca6a6ea` adds Release link-time `-O2 -g0`, eight prewarmed workers and a
+512 MiB initial heap. The final module at `60d77ae` is 138,124,056 bytes
+(75.8% smaller), without debug custom sections. The heap can still grow.
+
+Chromium 145 on Windows uses an NVIDIA Lovelace hardware adapter. The
+launcher imports 1,395 files (about 2.8 GiB) into a new browser context;
+the ready state survives reload. The baseline renders the intro and loads
+`core.nfsmw`. Collapsing its canvas through a real resize produces 155
+WebGPU validation errors in a short probe. The C++ drawable guard in
+`ca6a6ea` passes that same 0x0 → 1280x800 probe without validation errors
+and rendering resumes. This is also repeated on the final engine.
+
+Creating a profile exposes doubled keyboard text: `WebQA` becomes
+`WweebbQ` before the alias limit truncates it. The input gate supplies a
+character and the guest then asks `TranslateMessage` to synthesize another.
+Kit `60d77ae` marks the host's paired key/character and preserves that text
+when the current retrieved MSG is translated. A copied MSG is recognized;
+ordinary guest-posted messages and editing keys retain their normal path.
+The real browser now enters `WebQA` once with its capitalization intact,
+saves it, and a fresh engine boot reports Load complete. Its disposable
+63,596-byte save is under OPFS `profile/Documents/NFS Most Wanted/WebQA/`;
+the installation and personal profiles are untouched.
+
+Quick Play selects City Perimeter, a two-lap circuit, with a Lexus IS 300.
+The run loads the track and visibly accelerates, steers both ways, brakes
+into reverse, pauses, resumes and returns to the quick-race menu. This is
+a control/bring-up check; it does not finish that long race. Canvas checks
+at 1280x800 and 800x600 show the game and pause controls fitting without
+page scrolling. No JavaScript exceptions, WebGPU validation errors, missing
+imports, unknown transfers, guest memory faults or watchdog failures are
+reported in the final bounded run. Existing guest-thunk diagnostic warnings
+remain, so this is not a warning-free runtime claim. Short gameplay samples
+show roughly 56-100 new FPS, but these are not a controlled benchmark or
+proof that the issue #3 reporter's separate 20 FPS problem is fixed.
+
+Validation: the kit's real Wasm stub build passes; 51 focused tooling/game
+Python tests pass in the game-repo environment. The new game-independent
+`host_keyboard_tests` passes, and the complete Windows native `host_tests`
+passes with zero failures. Native tests build through the kit build API;
+LLVM-MinGW's bin directory is on PATH when running them. Formatting, game
+literal and tracked-source/documentation checks pass. A broader portable
+attempt reports 470 passed, 181 skipped and four failures: three need
+Windows symlink privileges, and one lacked native Clang on PATH. The Clang
+case passes when rerun with the installed compiler; the three privilege
+failures remain recorded, rather than being counted as passes.
+
+The streaming review is separate from these playback results. Issue #48's
+proposal is not integrated. A synthetic probe of the installed SDK's fetch
+backend reproduces cross-chunk data loss and verifies the proposed early
+return for a whole-file cache; no SDK files are modified. The required
+server/player/mount work and acceptance checks are recorded in web.md.
+
+Ignored evidence: `build/web-baseline.log`, `build/web-fixed-build.log`,
+`build/web-input-build.log`, `build/web-final-portable.log`,
+`build/web-zero-baseline.json`, `build/web-zero-fixed.json`,
+`build/web-gameplay-browser.json`, `build/web-stream-fetch-review.json`,
+and `build/web-*.png`. Native keyboard/host logs live in the standalone
+kit's ignored `build/web-keyboard-*.log` and `build/web-host-native-full.log`.
+The server is local only. Full career, browser restart/offline behavior,
+audible audio output, Safari and statistical race-loading reliability are
+not established by these checks.
+
 Ignored evidence: build/analyze.log, build/recomp/translate-report.json,
 build/windows-validation-build.log, and build/windows-runs/entry-_9kr2aex,
 entry-324l0viw, entry-tc8drwza and entry-3_xd6anl. The first case is the rejected

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Validate browser playback from our own sources on Windows/Emscripten:
+  installation import, alias creation/save/reload and quick-race controls.
+  Pin kit `60d77ae` for optimized Wasm linking, bounded startup, zero-size
+  canvas handling and single-delivery keyboard text. Document the complete
+  browser workflow and the remaining optional streaming work.
+
 - Publish `.recomp.json` project metadata for discovery tools, with a
   contributor reminder to keep its status aligned with the README.
 

@@ -43,8 +43,9 @@ and platform-specific evidence are in [docs/analysis.md](docs/analysis.md).
 ## Platform status
 
 The rows retain their recorded platform-specific scope. Windows was checked
-on 2026-11-01 with the shared diagnostic-host mod correction; other platform
-runtime observations below are historical. See the [run log](docs/analysis.md).
+on 2026-11-01 with the diagnostic-host mod correction, and browser playback
+on Windows was checked on 2026-11-05. Other platform observations below are
+historical. See the [run log](docs/analysis.md).
 
 | Platform | Verified status | Build command | Known issues and remaining checks |
 | --- | --- | --- | --- |
@@ -52,7 +53,7 @@ runtime observations below are historical. See the [run log](docs/analysis.md).
 | iPadOS 17+ | Played by touch on an earlier kit pin, with the core mods compiled into the app, which a stock device needs because it loads no plugins. | `.venv/bin/python tools/build.py --target ios --console` | Not re-checked since the kit gained restored kernel32 imports, new recovery arbitration and 836 static initializers. |
 | Linux | Rendered the race on an earlier pin, including under software Vulkan (lavapipe). | `.venv/bin/python tools/build.py --regenerate` | Not re-checked on the current pin. |
 | Windows | Native Windows x64 LLVM-MinGW/Vulkan: fresh menu and two quick-race probes pass at 1280x720 with core.nfsmw loaded. Captures show acceleration, steering, mouse targeting, brake input and pause/resume; both runs exit zero. | `tools/build.py --target smoke`; `tools/probe_windows.py --toolchain /path/to/llvm-mingw` | Bounded checks, not a full campaign or performance measurement. Two passes do not establish that the historical intermittent loading failure is eliminated. |
-| The browser | WebGPU in Chrome and Safari on an earlier pin: the game runs on a worker and reads its files from the browser's private storage; a race ran at 113-166 fps. | `.venv/bin/python tools/build.py --target web` | Reading a render target back is unsupported there. Not re-checked on the current pin. |
+| The browser | Windows/Chromium WebGPU checked on 2026-11-05: imports the installation, creates and reloads a profile, enters a quick race and accepts driving/pause controls. | `tools/build.py --target web`; [browser setup](docs/web.md) | Bounded gameplay checks, not a full race/campaign or performance benchmark. Render-target readback remains unsupported. Safari was not re-checked. |
 
 ### Historical issues and remaining checks
 
@@ -107,6 +108,10 @@ Linux and Windows builds are the kit's `--target app` (Windows cross-compiles
 with llvm-mingw), and `tools/build.py --target web` writes a servable site for
 the browser. The kit's [README](kit/README.md) has the prerequisites and the
 serving headers the web build needs.
+
+For a complete Windows/macOS/Linux browser workflow, including local serving,
+folder import and the optional streaming proposal, see [Build and play in a
+browser](docs/web.md).
 
 ## Play on an iPad
 
