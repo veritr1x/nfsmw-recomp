@@ -56,11 +56,18 @@ the same to reuse imported data and saves: `localhost` and `127.0.0.1`
 are separate browser origins. Use **Manage → Export saves** before
 clearing site data.
 
-The server binds to loopback. A container or remote deployment additionally
-needs an explicitly configured network listener and HTTPS outside localhost.
-The Docker entrypoint in NFS issue #3 uses another fork's `--asset-dir`
-option; that is not part of this launcher's import workflow. Its separate
-`server.py` is not invoked by that entrypoint.
+The server binds to loopback by default. In a container, pass
+`--host 0.0.0.0` instead of editing the launcher, and put HTTPS in front of
+it outside localhost (browsers require a secure context). For example:
+
+```sh
+.venv/bin/python kit/tools/web_launcher.py --game-dir /app --out /app/build/web-site     --web-build nfsmw=/app/build/web/recomp --stream nfsmw=/game --serve 2026 --host 0.0.0.0
+```
+
+Do not put shell comments between the continued lines of such a command: a
+`# ...` line ends the command there and drops the options after it. The
+`--asset-dir` option and the separate `server.py` in NFS issue #3 belong to
+another fork and are not needed.
 
 ## Optional streaming
 
@@ -82,8 +89,17 @@ Keep this generated site private, like the source game files.
 
 The native worker mounts the manifest's files read-only at `/data`, before
 loading and verifying `speed.exe`. File sizes come from the manifest so
-directory scans do not download every asset. Fetches use 4 MiB chunks and a
-64 MiB memory cache with eviction/refetch. The linked kit backend corrects
+directory scans do not download every asset. Every chunk a read needs is
+fetched in parallel (1 MiB ranges), with read-ahead past sequential reads and
+across the other small files in the same folder; failed or stalled requests
+are retried. Fetched chunks are kept in the browser's origin-private storage,
+keyed by the manifest, so each byte is downloaded once per browser, and the
+rest of the installation (about 2.8 GiB) fills in the background while the
+game is not waiting on a read. The player shows "Saving game data to this
+browser" until it is complete, and "Downloading game data" with the rate
+while the game waits on the network. Once complete, the game plays from local
+storage. A first visit over a slow link still waits for the data each new
+area needs: the first career load reads about 120 MiB of the world. The linked kit backend corrects
 Emscripten 6.0.11's whole-file offset bug across chunk boundaries, including
 our 6,029,312-byte executable. Its MIT notice ships with the player; the
 installed SDK is unchanged. See the
@@ -104,12 +120,18 @@ directory for an import-only distribution. The standard build's
 
 The supplied local server handles HEAD, single byte ranges, Content-Length,
 Content-Range and COOP/COEP. A different host must preserve these semantics
-and use the same origin for the player and assets. Files above 64 MiB require
+and use the same origin for the player and assets. Files above 192 MiB require
 range support; smaller whole-file responses are supported with exact size
 checks. Missing, truncated and malformed responses fail instead of supplying
 corrupt bytes. Missing or invalid manifests offer a return to the launcher
-to retry or import a copy. Streaming has no persistent offline download
-cache; OPFS saves persist independently.
+to retry or import a copy. The kept data is
+separate from imported installations and saves; clearing the site's data
+removes it.
+
+Streamed files are served as `application/octet-stream` with
+`Cache-Control: no-store, no-transform`. A proxy such as Cloudflare must not
+recompress them; with these headers it does not, and the player sizes the
+manifest from its body even when a proxy drops `Content-Length`.
 
 Windows/Chromium checks cover a streamed quick race, driving and pause/resume,
 profile reload, normal folder import with zero asset GETs, switching an
