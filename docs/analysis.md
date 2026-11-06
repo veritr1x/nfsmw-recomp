@@ -1391,3 +1391,44 @@ the full import matrix. These checks do not establish a completed race,
 prolonged stability, audible output, other browsers or resolution of every
 historical intermittent loading fault. Private evidence is under the kit's
 ignored `build/web-matrix` directory.
+
+## 2026-11-07 issue #3: stalls, focus freezes and the 20 FPS race
+
+Reproduced on Windows, Chromium 145 (Playwright build), hardware WebGPU,
+1899x1065 drawable. The reporter's hosted build (same Release Wasm as
+179654b) and a local build behaved alike.
+
+- **Freezes.** The web host deactivated the game whenever the page lost
+  keyboard focus; Most Wanted then stops its loop in `GetMessage`, so a
+  click on another window or monitor froze the race on screen (one run sat
+  107 s until refocused). The web now deactivates only while the tab is
+  hidden and releases held keys on blur.
+- **Streaming over the internet.** The hosted server answered in 1-1.5 s with
+  0.6-1.6 MB/s per request, and the player fetched 4 MiB chunks one at a time
+  with a 64 MiB memory cache, so single chunks took 16-45 s. The backend now
+  fetches in parallel with read-ahead and folder prefetch, retries, keeps
+  chunks in OPFS and fills the installation in the background. Small reads go
+  ahead of bulk ones on disk and network: a one-chunk read queued behind a
+  105 MB world read had held the scheduler for 250-390 ms. Through a local
+  proxy with 1 s latency and 1-4 MB/s, a cold profile reached the main menu
+  and the career prologue race; the first world load is bandwidth-bound
+  (about 120 MiB). Behind Cloudflare the manifest broke because a text type
+  was recompressed and lost Content-Length; streamed data is now served as
+  `application/octet-stream` with `no-transform`, and the manifest is sized
+  from its body.
+- **The 20 FPS race.** Profiles of the game thread showed a third of it in
+  clock reads (a JS call per import), then main-thread round trips (queries,
+  texture uploads, Present waiting on per-draw `writeBuffer`s), then eagerly
+  computed x86 flags. After the kit changes listed in its changelog, City
+  Perimeter runs at about 55-65 FPS (16.5-19 ms frames, P95 about 22 ms) at
+  the default 120 Hz simulation, and 70-98 FPS at 60 Hz; menus 80-110 FPS.
+  A 60-second drive logged no baton stall over 40 ms and no read over 1 s.
+  The game thread is now about 90% busy on its own work in races, so 120 FPS
+  in heavy scenes needs further guest-code and Direct3D-emulation speed.
+- Quitting from the game returns to the launcher, and keyboard
+  `GetObjectInfo` fills the key-binding screen's key names.
+
+Not established: other browsers, macOS/Linux browsers, a complete career,
+long sessions, audible output. Highlighted menu labels drawn through the
+fixed-function path stay invisible (D3D9 fixed-function draws are skipped on
+every GPU backend), which is separate work.
