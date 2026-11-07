@@ -40,7 +40,7 @@ kit design's implemented / auto-stub / unsupported split.
 | `DINPUT8` | 0 / 1 | unsupported today | `DirectInput8Create`; the kit shims the `DINPUT.dll` generation |
 | `DSOUND` | 1 / 2 | partly | ordinal 6 `DirectSoundCaptureCreate` (voice chat) needs a stub |
 | `WINMM` | 3 / 24 | unsupported today | the kit has the timer family; every `waveOut*` and `waveIn*` streaming call is missing |
-| `WS2_32` | 0 / 31 | auto-stub, fail cleanly | online play; the kit shims `WSOCK32.dll`, not `WS2_32.dll` |
+| `WS2_32` | 31 / 31 (22 by ordinal) | network down: sockets fail with WSAENETDOWN | LAN Play finds no servers; Online waits at "Connecting to EA.com" until Cancel. Both stay responsive (previously the game froze or aborted with exit code 3) |
 | `TAPI32` | 0 / 9 | auto-stub, fail cleanly | modem play |
 | `NETAPI32` | 0 / 1 | auto-stub | `Netbios` |
 
@@ -1432,3 +1432,75 @@ Not established: other browsers, macOS/Linux browsers, a complete career,
 long sessions, audible output. Highlighted menu labels drawn through the
 fixed-function path stay invisible (D3D9 fixed-function draws are skipped on
 every GPU backend), which is separate work.
+
+### Toward 120 FPS in a race, 2026-11-07
+
+Same machine and race (City Perimeter, 1899x1065). Profiles were taken with
+DevTools attached before the page loaded; a session attached to an
+already-running worker often gets no answer.
+
+- **x87 bookkeeping.** About a quarter of the instructions the game thread
+  ran were x87, each updating TOP, the tag word and the exact-integer shadow
+  in memory. The kit translator now keeps a straight-line run's stack in
+  locals (kit changelog). `_ftol2` (007c4b80), the CRT's float-to-integer
+  cast called from 943 sites and 2% of the frame, is native in
+  `native/ftol.c`; `RECOMP_NATIVE_SELFTEST=1` compares it with the
+  translation on 5026 values (edges, infinities, NaN, exact 64-bit
+  integers): 0 differ.
+- **Host costs.** Clock reads in scheduling checkpoints, per-call flag loads,
+  per-frame WebGPU bind groups and per-draw sampler lookups (kit changelog).
+- **Result.** 85-95 new frames a second while driving (10 ms frames, P95
+  17-21 ms), from 55-65. The game thread now waits 15% of the time, on
+  Present and on its own frame limiter, so its work is about 8.5 ms a frame.
+  The browser here composites at 102-104 Hz even on a blank tab (the monitor
+  is 120 Hz), which caps what this machine can show; 115 FPS on screen needs
+  a browser presenting at 120 Hz.
+- **Sustained drive.** 215 s of City Perimeter (throttle held, steering into
+  the wall at times): 22,495 page animation frames, two main-thread gaps over
+  50 ms (89 ms and 239 ms), no streamed read over 1 s, no errors. 65-80 new
+  frames a second while scraping the wall, 85-95 on open road.
+- **The hitches are the desktop, not the game.** Three drives logged one or
+  two page-animation gaps of 100-240 ms each. A main-thread profile over the
+  gaps showed no stretch of 50 ms without idle time, and no WebGPU pipeline
+  or shader module was created during them (they are all built when the race
+  loads). A Chrome trace caught the gap in the GPU process:
+  `DCompPresenter::Present` blocked 128 ms in
+  `DCLayerTree::CommitAndClearPendingOverlays::Commit` (every one of the
+  6,398 commits named 18 overlays). This machine runs Sunshine and Apollo,
+  whose virtual display adapters are active; with the desktop captured,
+  DirectComposition commits can block and DWM paces to about 102 Hz instead
+  of the monitor's 120. A blank page in another Chromium logged no gap in
+  100 s.
+- **With Sunshine and Apollo stopped** a blank tab runs at 120 Hz, but a
+  page that only clears a full-window WebGPU canvas every frame still runs at
+  about 103 Hz and stalls 110-120 ms every 90 s, in the same DirectComposition
+  commit. With `--disable-direct-composition` that page runs at 120.6 Hz with
+  no periodic stall. So on this machine (whose virtual display adapters stay
+  installed) Chromium's DirectComposition path for WebGPU canvases caps and
+  stalls presentation for any page; it is not the game's doing.
+- **The game at 120 Hz.** With DirectComposition off (display 113-119 Hz)
+  the race showed 75-86 new frames a second at 9-13 ms frames, and even the
+  alias dialog only 70 at 15.5 ms.
+- **The lost time was sleeping.** A per-caller count of `Sleep` showed the
+  frame limiter (returning to 007ec2a6) asking for 7 ms on average and
+  getting 13.5; in a race 1.2 s of every 5 s went to oversleep. The host's
+  idle wait asked 1.9 ms and took 13.4 on average: a browser worker's timed
+  wait wakes on Windows' 15.6 ms timer tick. The kit now sleeps precisely
+  (kit changelog). Then the dialog runs at 119.5 FPS, 8.0 ms frames, P95
+  11.5 ms, no repeated frames.
+- **Result.** City Perimeter at 120 Hz: 115-119 new frames a second along
+  the wall, 100-115 steering through the open city, 8.1-8.9 ms frames, P95
+  11-18 ms. A 180 s drive logged 22,917 page frames and no gap over 50 ms.
+  The heaviest open-road views still miss some refreshes; they need about
+  half a millisecond more per frame.
+- **Judder.** P95 frame time stays at about 21 ms, two refresh intervals,
+  with 20-30% of shown frames repeated: game frames take about as long as one
+  9.8 ms refresh, so the late ones are shown twice. It is not the fixed
+  simulation step: `core.nfsmw/sim_rate` 100 instead of 120 changed neither
+  P95 nor the frame time. `RECOMP_HOST_PRESENT_PACING=immediate` was worse
+  (71-80 FPS; the game's own limiter then sleeps 16% of the time). Smooth
+  presentation here needs frames well inside the refresh interval.
+- **A false alarm worth knowing.** A covered or minimised test window makes
+  Chromium report the page hidden and throttle it to one frame a second; the
+  overlay then reads 1 FPS with 1000 ms frames. Bring the window to the
+  front (`Page.bringToFront`) before measuring.

@@ -65,9 +65,36 @@ it outside localhost (browsers require a secure context). For example:
 ```
 
 Do not put shell comments between the continued lines of such a command: a
-`# ...` line ends the command there and drops the options after it. The
-`--asset-dir` option and the separate `server.py` in NFS issue #3 belong to
-another fork and are not needed.
+`# ...` line ends the command there and drops the options after it (without
+`--serve` the launcher builds the site and exits, so a container that runs it
+restarts in a loop). The `--asset-dir` option and the separate `server.py` in
+NFS issue #3 belong to another fork and are not needed.
+
+### Playing over a LAN
+
+Browsers give WebGPU and shared memory only to a secure context: `localhost`,
+or HTTPS. `http://192.168.x.y:2026` from another machine therefore cannot run
+the game. Either:
+
+- serve HTTPS directly with a certificate: add
+  `--tls-cert cert.pem --tls-key key.pem`. [mkcert](https://github.com/FiloSottile/mkcert)
+  makes one the LAN's browsers trust (`mkcert 192.168.x.y` on the host, and
+  install its root on each player's machine); a self-signed certificate also
+  works once each player accepts the browser's warning:
+
+  ```sh
+  openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 365 \
+      -subj "/CN=192.168.x.y" -addext "subjectAltName=IP:192.168.x.y"
+  ```
+
+- or, without a certificate, mark the address secure in each player's
+  Chromium: `chrome://flags/#unsafely-treat-insecure-origin-as-secure`, add
+  `http://192.168.x.y:2026`, and relaunch.
+
+Online and LAN multiplayer are not available in the browser: a page has no raw
+sockets, so the game's network is reported as down. LAN Play opens and finds no
+servers; Online waits at "Connecting to EA.com" until you choose Cancel. The
+HTTPS setup above serves the game to other machines for single-player only.
 
 ## Optional streaming
 
