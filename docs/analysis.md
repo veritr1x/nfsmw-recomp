@@ -40,7 +40,7 @@ kit design's implemented / auto-stub / unsupported split.
 | `DINPUT8` | 0 / 1 | unsupported today | `DirectInput8Create`; the kit shims the `DINPUT.dll` generation |
 | `DSOUND` | 1 / 2 | partly | ordinal 6 `DirectSoundCaptureCreate` (voice chat) needs a stub |
 | `WINMM` | 3 / 24 | unsupported today | the kit has the timer family; every `waveOut*` and `waveIn*` streaming call is missing |
-| `WS2_32` | 0 / 31 | auto-stub, fail cleanly | online play; the kit shims `WSOCK32.dll`, not `WS2_32.dll` |
+| `WS2_32` | 31 / 31 (22 by ordinal) | network down: sockets fail with WSAENETDOWN | LAN Play finds no servers; Online waits at "Connecting to EA.com" until Cancel. Both stay responsive (previously the game froze or aborted with exit code 3) |
 | `TAPI32` | 0 / 9 | auto-stub, fail cleanly | modem play |
 | `NETAPI32` | 0 / 1 | auto-stub | `Netbios` |
 
