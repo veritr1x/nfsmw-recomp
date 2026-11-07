@@ -44,8 +44,9 @@ volatile_reads = []
 # real code; neither is 16-byte aligned.
 # The four above, plus pointer-referenced helpers found by scanning the image
 # (2026-09-17, docs/analysis.md).
-# Native replacements for the renderer's hottest x87 routines (native/).
-native = { header = "native/overrides.h", sources = ["native/culling.c"] }
+# Native replacements for the renderer's hottest x87 routines and the CRT's
+# float-to-integer cast (native/).
+native = { header = "native/overrides.h", sources = ["native/culling.c", "native/ftol.c"] }
 # The engine's frame time, 1/60, is one pooled .rdata float with 17 readers.
 # The three that set the simulation rate read a slot in the section padding
 # instead, which the core.nfsmw mod fills (mods/core/nfsmw/nfsmw.c).
