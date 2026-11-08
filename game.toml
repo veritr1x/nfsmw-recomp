@@ -879,6 +879,11 @@ mouse_device_right = 0x00a37f48
 camera = 0x00a37f50
 # mods/game_view.cpp: Populous's seven sprite routines. This game has none.
 sprites = []
+# runtime/win32.h free run is not used. 007ec1d3 is the start routine of every
+# EA thread (it calls param[1](param[2]); NFS Carbon's 008daf40), but running
+# those threads beside the game thread corrupted the intro movies and race
+# textures (2026-11-08): their shared state is not all behind locks.
+free_run = []
 
 [mods]
 # The mod runtime's Populous integrations hook Populous routines by address;

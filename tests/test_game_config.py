@@ -9,6 +9,8 @@ KIT = ROOT / "kit"
 # The zero-filled section padding after .rsrc in the pinned speed.exe: mapped,
 # never referenced by the game. Every unidentified hook and global lives here.
 SENTINEL_LOW, SENTINEL_HIGH = 0x00A37700, 0x00A38000
+# Hooks whose addresses were verified in the listings (game.toml says where).
+VERIFIED_HOOKS = {"free_run"}
 
 
 def load_module(name):
@@ -53,7 +55,9 @@ class NfsmwConfigTests(unittest.TestCase):
     def test_unidentified_addresses_stay_in_the_sentinel_padding(self):
         """Until a hook is found, it must point where the game never looks."""
         addresses = [self.cfg["translate"]["animation_counter"]]
-        for value in self.cfg["hooks"].values():
+        for key, value in self.cfg["hooks"].items():
+            if key in VERIFIED_HOOKS:
+                continue
             addresses += value if isinstance(value, list) else [value]
         addresses += [entry["addr"] for entry in self.cfg["globals"].values()]
         for address in addresses:

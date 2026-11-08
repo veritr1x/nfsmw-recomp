@@ -1530,4 +1530,15 @@ already-running worker often gets no answer.
   where the game thread is about 91% busy (about 23-25 ms a frame: 45% guest
   code, 23% Direct3D). The presented rate and the GPU's clock fall with it.
   This matches the issue #3 report (about 50 FPS north of Camden). Compare
-  builds on the same route, for example with the pause menu's Restart.
+  builds on the same route, for example with the pause menu's Restart, or
+  inside one run with the kit's in-run A/B (`RECOMP_AB_PERIOD=10`, which
+  prints both sides' frame times every 30 s).
+- **Changes from the NFS Carbon port's kit** (2026-11-08): D3DX constant,
+  sampler and preshader lookups; per-block uniform reuse, changed-span
+  vertex buffer uploads, direct texture writes and cached program and layout
+  lookups in the WebGPU renderer; cheaper import calls. An in-run A/B over
+  three minutes of a quick race measured 8.9-9.7 ms a frame against
+  9.8-11.4 ms for the earlier behaviour (9-15% less), with no frame gap over
+  50 ms. Two Carbon changes are not used here: taking shared effect values
+  lazily, and free run of EA's threads (007ec1d3, all of them start there),
+  which corrupted the intro movie and blurred race textures and shadows.
