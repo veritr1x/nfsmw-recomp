@@ -1542,3 +1542,156 @@ already-running worker often gets no answer.
   50 ms. Two Carbon changes are not used here: taking shared effect values
   lazily, and free run of EA's threads (007ec1d3, all of them start there),
   which corrupted the intro movie and blurred race textures and shadows.
+
+## 2026-11-08: pacing, tick timing, streaming hints, camera seeds, pad keys
+
+Not built or run yet: these are source changes for the next build, and every
+claim below about behaviour is what the listings say, not a measurement.
+
+### Camera slots with widescreen off
+
+The six camera operand redirects (game.toml) send FDIVR/FMUL operands to
+slots 0x00a37804-0x00a3781c, which core.nfsmw fills per view. With
+`widescreen` off it installed no camera hook and wrote none of them, so they
+held only the loader's redirect copies, and those were eight bytes wide: the
+shadow camera's copy into 0x00a37818 overwrote 0x00a3781c, the shadow
+distance multiplier (the same overlap that austynoconnor/most-wanted-web
+e457b1a found hiding the 3D scene). The kit loader is being changed to cut
+each copy at the next redirected slot; the seeds do not depend on that. game.toml
+now seeds all five with the replaced constants, read from speed.exe:
+0x0089096c 1.0, 0x008933d4 0.5, 0x008910c4 float32 1.1 (0x3f8ccccd); the
+loader applies seeds after the copies. With widescreen off the mod also
+copies those constants into the slots itself. tests/test_game_config.py
+checks every seed against its redirect's source.
+
+### Frame pacing (native/pacing.c, core.nfsmw `frame_pacing`)
+
+The repeated frames come from the scheduler, not the presenter.
+Scheduler::Run (00642e60; the scheduler is at [0x009203b0]: +0x14 last
+timer, +0x18 total, +0x1c leftover ticks, +0x20 seconds per tick, +0x28 ticks
+run) measures the time since the previous pass, and when it is under one tick
+calls bThreadYield (0064cf00, a jump to THREAD_yield 007ec298, which calls
+SleepEx through 0x008902c4) with the rest in whole milliseconds; that call
+returns to 00642ed7. The time stamp was taken before the sleep, so the sleep
+counts toward the next pass: passes alternate long and short, and a short one
+runs no tick and draws the same scene again. The "frame limiter returning to
+007ec2a6" of the 2026-11-07 Sleep counts is this sleep: 007ec2a6 is
+THREAD_yield's own call site (other THREAD_yield callers return there too).
+
+Following elforeign/nfs-most-wanted-mac (MIT) runtime/pacing.c:
+`native_0064cf00` skips that sleep when it is the scheduler's (return address
+00642ed7) and the main loop presented a paced frame within three ticks; and
+`native_006e7220` (the frame's Present, called by the main loop at 0064a7ee,
+returning to 0064a7f3) waits after the main loop's Present until one tick
+after the previous frame, nudging the slot by (0.5 - leftover) x 10% of a tick
+so the leftover stays near 0.5. A frame whose pass ran more than one tick is
+behind: no wait. The wait is the guest's SleepEx (the scheduler hands the
+baton on; alertable, like the skipped sleep) for whole milliseconds, then
+`os_sleep_us` for under a millisecond while holding the baton. Loading-screen
+presents (00663c90 and other callers) are not paced.
+
+Switches: core.nfsmw `frame_pacing` (default on) writes 1 to 0x00a37b60, which
+pacing.c reads; `RECOMP_NFSMW_PACING=0|1` overrides it. With
+`RECOMP_AB_PERIOD=<s>` (and `RECOMP_AB_SWITCHES` empty or containing
+`pacing`) the earlier phase runs without pacing: pacing.c recomputes the
+phase from the same clock and switches as platform/ab_phase.h (C++, so not
+callable from here), and the kit's 30 s report compares the two.
+
+### Tick timing (core.nfsmw `tick_timing`, default on)
+
+Places that count ticks or passes instead of time, corrected as elforeign
+does (all verified in our listings or the translation):
+
+- SimTask::SimTask (006eccd0, thiscall (index, rate, taskable, delay, mode),
+  RET 0x14, its only caller 006ed1dd): rate at [esp+8] (clamped to 1),
+  delay at [esp+0x10] (stored negated at +8). A task with rate below one ran
+  twice as often at 120 Hz, with half the dt: the same game time for twice the
+  work. Rates below one are scaled by 60/hz; an every-tick task's delay by hz/60.
+- Scheduler::RunNormalSpeed (00642db0, thiscall (n), RET 4) runs at most
+  (byte [0x009203ac] == 0) x 4 + 2 ticks unless [0x009b0fa0] == 5 or
+  [this+0x24] is set; each tick calls every task's vtable +4 with (tick
+  [this+0x28], phase 0-7), then 00633ef0, then increments +0x28. At 120 Hz the
+  limit of 6 is 50 ms, so a frame slower than 20 fps lost game time; the
+  ticks up to 100 ms are run in the hook first.
+- AdvanceRealTime (0065c6d0, end of every main-loop pass): RealTimeFrames
+  ([0x008f82f4], 1/60 s units of [0x009259bc] plus the remainder
+  [0x00925960]) gets at least one unit a pass (0065c702 JNZ / MOV EAX,1). Above
+  60 fps everything timed by it ran fast; at our 120 Hz that was every race.
+  The hook runs the original and takes the forced unit back
+  ([0x008f82f4], [0x008f82f8], [0x008f82fc]).
+- NISActivity::OnTask (006f58d0; not in functions.tsv, which ends 006f5750
+  at 006f58c2, but translated, and it is a vtable method): state [+0x2ec] 3
+  counts calls in [+0x3d4] and starts the NIS above 30 (006f5953). The count
+  moves by 60/hz a call.
+- FEngHud::FEngHud (005a6600) and DetermineHudFeatures (0057ca60, thiscall,
+  EDX:EAX, RET 4; both reached only through vtables): the HUD's enable is
+  held until its set-up updates have taken their 60 Hz time.
+
+Each hook that cannot be installed is logged and left out.
+
+### Streaming hints (core.nfsmw `stream_ahead`, default off)
+
+TheTrackStreamer is 0x009aa9d0: section entries at [+0] (count [+4]), 0x5c
+bytes each: +8 section number, +0xb needed bits, +0xc state (LoadSection
+0072dac0 sets 2; 3-4 resident), +0x10 file index, +0x14 file offset, +0x18
+bytes in memory, +0x1c bytes read (LoadSection reads +0x1c bytes at +0x14 of
+the file named at TrackStreamer + 0x30 + index x 0x40, through 00660ee0;
++0x18 == +0x1c is an uncompressed section). Names: 0x30 and 0x70 (+0xb0 is
+the split-screen renumbering flag), e.g. `TRACKS\STREAML2RA.BUN` (format
+`TRACKS\STREAM%s.BUN`, 532,663,556 bytes for L2RA). The camera's streaming
+position is +0xc0 (x, y, z, velocity +0xc/+0x10, valid byte +0xdc, zone
++0xde); DetermineCurrentZones (0072df20) and DetermineStreamingSections
+(0072dd70) confirm those offsets and how a zone's set is taken: a loading
+section ([0x009a3b70] list, zones at +0x1a, count +0x18) through
+GetSectionsToLoad (0072c750, ECX 0x009a3b50, RET 0xc), else the drivable
+section's own list ([0x009a3b60], zone +0xc, count +0x10, numbers +0x12).
+AddCurrentStreamingSections (00728060) matches numbers against entry +8.
+
+The hint, lighter than elforeign's runtime/streaming.c (which forces zone
+switches and enlarges the pool): every quarter second, ServiceGameState
+(007310b0) samples FindDrivableSection (0072ca00, ECX 0x009a3b50, RET 4)
+every 40 m along the velocity up to 3 s (60-300 m) ahead; each zone not
+current and not hinted in the last 10 s has its sections that are neither
+loading nor resident queued (at most 48 MiB a sample) as file ranges in a
+32-entry ring at 0x00a37c00 (head 0x00a37b70, tail 0x00a37b74). After each
+Present, native/pacing.c hands them to `recomp_web_stream_prefetch` in the
+web player, which fetches missing chunks at read-ahead priority into its
+memory and OPFS caches (kit web/player/fetch-backend.js). The game's own pool,
+zone switches and loads are unchanged; on native builds the ring is dropped.
+FindDrivableSection moves the section it finds to the front of its list,
+which only changes a search order.
+
+### Pad keys
+
+The game's default key table is at 0x008f6d80 (0x34-byte records: name
+string, then up to four device/key pairs, device 1 the keyboard, keys as
+DirectInput codes). Gas Up, brake Down, steer Left/Right, e-brake Space,
+speedbreaker (GAMEBREAKER) RCtrl and G, nitrous LAlt and X, shift down LCtrl,
+shift up LShift, reset R, HUD engage Return, HUD pad down B / left M / right
+Tab, camera C, look back L, pullback P, pause Esc, next song T. The action
+enum (name/value pairs from NULL_ACTION at 0x008f672c): GAMEBREAKER 8, SHIFTUP 9, SHIFTDOWN 10,
+NOS 11, RESET 12, CAMERAACTION_CHANGE 20, LOOKBACK 23. The mapped pad now
+sends X on L1 (nitrous), G on R3 (speedbreaker), L on L3 (look back) and R on
+Select (reset); Tab, the right-stick cursor's click and the camera key left
+the pad to make room (the keyboard still has them). Cross and square keep gas
+and brake for smoke/pad-race.script.
+
+### Recorded, not changed
+
+- **Frame-malloc buffers.** eInitEngine (005009d0) allocates two 400 KB
+  (0x64000) buffers into 0x00915128 and 0x0091512c and records the size at
+  0x00915f7c. Per-frame render allocations come from them; when one runs out,
+  CarRenderInfo::Render (0074e160) skips cars, which shows as traffic
+  blinking out in dense scenes. elforeign makes them four times larger.
+- **Career save.** The memory-card task (007f4f11, state 0xb) opens the save
+  with `_open`, writes the 0x1c-byte header and two blocks, and sets the error
+  (+0x2f4 = 1, +0x2f8 = 7) on a short write, but after `_close` it clears both
+  unconditionally, so only a failed open is reported. A full or failing disk
+  (or an OPFS write error on the web) reports a successful save.
+- **Hot paths, by name** (elforeign's hooks.txt, addresses checked here):
+  eMeshRender's per-record draw 006d7660 and sorted queue 006e0200,
+  ScenerySectionHeader::DrawAScenery 00729120,
+  GrandSceneryCullInfo::WhatSectionsShouldWeDraw 00731870 and StuffScenery
+  00723fa0, TheTrackStreamer 009aa9d0.
+- **CRT copy.** 007c4840 (Ghidra: `FID_conflict:_memcpy`, 672 bytes) is the
+  CRT's memmove/memcpy; a native replacement is a candidate like `_ftol2`.

@@ -21,3 +21,7 @@ width = { type = "int", default = 0, min = 0, max = 16384, label = "Game width (
 height = { type = "int", default = 0, min = 0, max = 16384, label = "Game height (0: the screen's shape)" }
 fov_scaling = { type = "int", default = 1, min = 0, max = 2, label = "Field of view (0 original, 1 Xbox 360, 2 exact)" }
 fe_scale = { type = "int", default = 100, min = 50, max = 150, label = "Front end size (%)" }
+# native/pacing.c reads this through the section padding; RECOMP_NFSMW_PACING=0|1 overrides it.
+frame_pacing = { type = "bool", default = true, label = "Even frame pacing (one tick a frame)" }
+tick_timing = { type = "bool", default = true, label = "Keep 60 Hz timing at other simulation rates" }
+stream_ahead = { type = "bool", default = false, label = "Prefetch world sections ahead (web streaming)" }

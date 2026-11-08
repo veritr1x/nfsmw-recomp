@@ -34,10 +34,46 @@
  *
  * CINEMATICS. The movies are 4:3 frames with the picture letterboxed inside
  * (about 1.68:1). Their quad is sized so that picture fills as much of the
- * screen as it can without losing any of it. */
+ * screen as it can without losing any of it.
+ *
+ * With widescreen off, the redirected camera slots get the values of the
+ * constants they replace (game.toml seeds them too).
+ *
+ * TICK TIMING (tick_timing). Places that count ticks or main-loop passes
+ * instead of time, corrected so the game keeps its 60 Hz timing at sim_rate
+ * (after elforeign's nfs-most-wanted-mac runtime/pacing.c, MIT):
+ *  - SimTask::SimTask (006eccd0): a task with rate 0 < r < 1 runs every 1/r
+ *    ticks with dt = step / r; at 120 Hz it ran twice as often as intended
+ *    (same game time, twice the work). Its rate is scaled by 60/hz; an
+ *    every-tick task's delay (in ticks) is scaled by hz/60.
+ *  - Scheduler::RunNormalSpeed (00642db0) runs at most 6 ticks a frame
+ *    (100 ms at 60 Hz, 50 ms at 120); the ticks beyond that are run here up to
+ *    the same real time, so a slow frame still keeps game time down to 10 fps.
+ *  - AdvanceRealTime (0065c6d0) counts real time in 1/60 s units but forces at
+ *    least one a pass, so above 60 fps everything timed by it (camera movers,
+ *    texture animation, speech, the pre-race intro) ran fast. A pass adds only
+ *    the whole units that elapsed.
+ *  - NISActivity::OnTask (006f58d0) starts a loaded NIS after 31 calls (one a
+ *    tick); the count advances by 60/hz a call.
+ *  - FEngHud::DetermineHudFeatures (0057ca60): the HUD, and with it the
+ *    countdown and GO, comes on no sooner after FEngHud::FEngHud (005a6600)
+ *    than its set-up frames took at 60 Hz.
+ *
+ * FRAME PACING (frame_pacing) is native/pacing.c; this mod only tells it the
+ * setting, through SLOT_PACING.
+ *
+ * STREAMING HINTS (stream_ahead, off by default). The track streamer loads
+ * the next zone's world sections only when the camera crosses into it. Here
+ * the zones about 3 s / 300 m ahead along the camera's velocity are looked up
+ * (VisibleSectionManager::FindDrivableSection), their section lists taken as
+ * TrackStreamer::DetermineStreamingSections takes them, and the file ranges
+ * of the sections not yet loaded are queued for native/pacing.c, which asks
+ * the web player to prefetch them into its cache. Nothing is loaded into the
+ * game's pool and the streamer's own decisions are unchanged. */
 #include "pop_mod_api.h"
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 POP_MOD_DECLARE_ABI();
@@ -61,6 +97,16 @@ POP_MOD_DECLARE_ABI();
 #define FIND_OBJECT 0x00524850u          /* cdecl (package, hash) */
 #define GET_CENTER 0x00524ee0u           /* cdecl (object, float *x, float *y) */
 #define SET_CENTER 0x00525050u           /* cdecl (object, float x, float y) */
+#define SIMTASK_CTOR 0x006eccd0u         /* thiscall (index, rate, taskable, delay, mode), ret 0x14 */
+#define RUN_NORMAL_SPEED 0x00642db0u     /* thiscall Scheduler::RunNormalSpeed (ticks), ret 4 */
+#define EVENT_QUEUE 0x00633ef0u          /* cdecl: runs the queued events, once a tick */
+#define ADVANCE_REAL_TIME 0x0065c6d0u    /* cdecl, no arguments; end of every main-loop pass */
+#define NIS_ON_TASK 0x006f58d0u          /* thiscall NISActivity::OnTask (on its ITaskable) */
+#define HUD_CTOR 0x005a6600u             /* thiscall FEngHud::FEngHud */
+#define HUD_FEATURES 0x0057ca60u         /* thiscall FEngHud::DetermineHudFeatures -> EDX:EAX */
+#define SERVICE_GAME_STATE 0x007310b0u   /* fastcall TrackStreamer::ServiceGameState */
+#define FIND_DRIVABLE 0x0072ca00u        /* thiscall (VSM; bVector2 *) -> drivable section */
+#define SECTIONS_TO_LOAD 0x0072c750u     /* thiscall (VSM; LoadingSection *, short *, max) -> n */
 
 /* Data */
 #define REDIRECTED_FRAME_TIME 0x00a37800u
@@ -98,10 +144,33 @@ POP_MOD_DECLARE_ABI();
 #define SPLASH_WIDE_NAME 0x0089f828u
 #define SPLASH_NAME 0x008a0114u
 #define ORIGINAL_FRAME_TIME 0x3c888889u /* 1/60 */
+/* The constants the camera slots replace (game.toml operand_redirects). */
+#define CONST_ONE 0x0089096cu
+#define CONST_HALF 0x008933d4u
+#define CONST_SHADOW_DISTANCE 0x008910c4u
+/* Timing */
+#define SCHEDULER_PTR 0x009203b0u    /* Scheduler::fgScheduler; +0x28 ticks run */
+#define SCHED_DEBUG_FLAG 0x009203acu /* nonzero: RunNormalSpeed's limit is 2, not 6 */
+#define GAME_MODE 0x009b0fa0u        /* 5: the mode RunNormalSpeed does not limit */
+#define REAL_TIME_ELAPSED 0x009259bcu /* float, seconds of this pass */
+#define REAL_TIME_ERR 0x00925960u    /* float, the carried remainder */
+#define REAL_TIME_FRAMES 0x008f82f4u /* 1/60 s units */
+#define REAL_TIME 0x008f82f8u
+#define REAL_TIME_FRAMES_ELAPSED 0x008f82fcu
+/* Streaming */
+#define TRACK_STREAMER 0x009aa9d0u   /* TheTrackStreamer */
+#define VSM 0x009a3b50u              /* TheVisibleSectionManager */
+#define SLOT_PACING 0x00a37b60u      /* read by native/pacing.c */
+#define STREAM_RING_HEAD 0x00a37b70u /* ... and the hints it hands on */
+#define STREAM_RING_TAIL 0x00a37b74u
+#define STREAM_RING 0x00a37c00u
+#define STREAM_RING_SIZE 32u
+#define HOOK_SLOTS 24
 
 static const PopModApi *g_api;
-static uint32_t g_hooks[14];
+static uint32_t g_hooks[HOOK_SLOTS];
 static uint32_t g_frame_time_bits = ORIGINAL_FRAME_TIME;
+static int g_rate = 60; /* simulation ticks a second */
 
 static int g_widescreen = 1;
 static float g_aspect = 4.0f / 3.0f;
@@ -521,6 +590,303 @@ static void set_widescreen_mode(const PopModApi *api, pop_cpu_v1 *cpu, PopHookIn
     api->call_original(api, cpu->target, cpu);
 }
 
+/* ---- tick timing ---------------------------------------------------------- */
+
+static uint32_t sched_ticks(void) {
+    uint32_t s = get_u32(SCHEDULER_PTR);
+    return s ? get_u32(s + 0x28) : 0;
+}
+
+/* SimTask::SimTask(index, rate, taskable, delay, mode). */
+static void simtask_ctor(const PopModApi *api, pop_cpu_v1 *cpu, PopHookInvocation *inv, void *user) {
+    (void)inv;
+    (void)user;
+    if (g_rate == 60)
+        return;
+    float k = 60.0f / (float)g_rate, rate = get_float(cpu->esp + 8), delay = get_float(cpu->esp + 16);
+    if (rate > 0.0f && rate < 1.0f)
+        put_float(cpu->esp + 8, rate * k); /* also keeps its first call's delay in real time */
+    else if (delay > 0.0f)
+        put_float(cpu->esp + 16, delay / k);
+    (void)api;
+}
+
+/* Scheduler::RunNormalSpeed(n): the ticks between the original limit and the
+ * same real time at this rate, run as the original runs each (every task's
+ * OnTask(tick, phase) for phases 0-7, then the event queue), before it runs
+ * the rest. */
+static void run_normal_speed(const PopModApi *api, pop_cpu_v1 *cpu, PopHookInvocation *inv, void *user) {
+    uint32_t self = cpu->ecx, n = get_u32(cpu->esp + 4);
+    uint8_t debug = 0, single = 0;
+    (void)inv;
+    (void)user;
+    if (g_rate <= 60 || !api->guest_call)
+        return;
+    api->guest_read_u8(api, SCHED_DEBUG_FLAG, &debug);
+    api->guest_read_u8(api, self + 0x24, &single);
+    uint32_t cap = (debug == 0) * 4u + 2u;
+    if (get_u32(GAME_MODE) == 5 || (single && n) || n <= cap)
+        return;
+    uint32_t limit = cap * (uint32_t)g_rate / 60u, want = n < limit ? n : limit;
+    for (uint32_t k = cap; k < want; ++k) {
+        for (uint32_t phase = 0; phase < 8; ++phase) {
+            uint32_t list = get_u32(self + 0x10);
+            for (uint32_t node = get_u32(get_u32(list + 4)); node != get_u32(get_u32(self + 0x10) + 4);
+                 node = get_u32(node)) {
+                uint32_t task = get_u32(node + 8), args[2] = {get_u32(self + 0x28), phase};
+                if (api->guest_call(api, get_u32(get_u32(task) + 4), task, args, 2, 0) != POP_OK)
+                    return;
+            }
+        }
+        api->guest_call(api, EVENT_QUEUE, 0, 0, 0, 0);
+        api->guest_write_u32(api, self + 0x28, get_u32(self + 0x28) + 1);
+    }
+    api->guest_write_u32(api, cpu->esp + 4, cap);
+}
+
+/* AdvanceRealTime: the original, without its one-unit minimum. */
+static void advance_real_time(const PopModApi *api, pop_cpu_v1 *cpu, PopHookInvocation *inv, void *user) {
+    (void)inv;
+    (void)user;
+    /* FLD; FADD; FMUL 60.0 in x87 precision, truncated by _ftol2. */
+    double sum = (double)get_float(REAL_TIME_ELAPSED) + (double)get_float(REAL_TIME_ERR);
+    int none = (long long)(sum * 60.0) == 0;
+    api->call_original(api, cpu->target, cpu);
+    if (none && get_u32(REAL_TIME_FRAMES_ELAPSED) == 1) {
+        uint32_t frames = get_u32(REAL_TIME_FRAMES) - 1;
+        api->guest_write_u32(api, REAL_TIME_FRAMES, frames);
+        api->guest_write_u32(api, REAL_TIME, frames);
+        api->guest_write_u32(api, REAL_TIME_FRAMES_ELAPSED, 0);
+    }
+}
+
+/* NISActivity::OnTask: a loaded NIS (+0x2ec == 3) counts calls at +0x3d4 and
+ * starts after 31. Here the count moves by 60/hz a call. */
+static uint32_t g_nis_owner, g_nis_written, g_nis_acc;
+static void nis_on_task(const PopModApi *api, pop_cpu_v1 *cpu, PopHookInvocation *inv, void *user) {
+    uint32_t self = cpu->ecx, state = get_u32(self + 0x2ec), n = get_u32(self + 0x3d4);
+    (void)inv;
+    (void)user;
+    api->call_original(api, cpu->target, cpu);
+    if (g_rate == 60 || state != 3 || get_u32(self + 0x3d4) != n + 1)
+        return;
+    if (self != g_nis_owner || n != g_nis_written) {
+        g_nis_owner = self;
+        g_nis_acc = 0;
+    }
+    g_nis_acc += 60;
+    uint32_t whole = g_nis_acc / (uint32_t)g_rate;
+    g_nis_acc -= whole * (uint32_t)g_rate;
+    g_nis_written = n + whole;
+    api->guest_write_u32(api, self + 0x3d4, g_nis_written);
+}
+
+/* The newest FEngHud, when it was made, how many updates it has had (0: no
+ * longer held) and the update on which the game first enabled it. */
+static uint32_t g_hud, g_hud_tick0, g_hud_frames, g_hud_on;
+static void hud_ctor(const PopModApi *api, pop_cpu_v1 *cpu, PopHookInvocation *inv, void *user) {
+    (void)api;
+    (void)inv;
+    (void)user;
+    g_hud = cpu->ecx;
+    g_hud_tick0 = sched_ticks();
+    g_hud_frames = 1;
+    g_hud_on = 0;
+}
+static void hud_features(const PopModApi *api, pop_cpu_v1 *cpu, PopHookInvocation *inv, void *user) {
+    uint32_t self = cpu->ecx;
+    (void)inv;
+    (void)user;
+    api->call_original(api, cpu->target, cpu);
+    if (g_rate <= 60 || self != g_hud || !g_hud_frames)
+        return;
+    if (!g_hud_on && (cpu->eax || cpu->edx))
+        g_hud_on = g_hud_frames;
+    int32_t ticks = (int32_t)(sched_ticks() - g_hud_tick0);
+    if (g_hud_on && (ticks < 0 || (uint32_t)ticks * 60u >= g_hud_on * (uint32_t)g_rate)) {
+        g_hud_frames = 0;
+        return;
+    }
+    ++g_hud_frames;
+    if (g_hud_on)
+        cpu->eax = cpu->edx = 0;
+}
+
+/* ---- streaming hints ---------------------------------------------------- */
+
+#define AHEAD_ZONES 12
+#define HINT_BUDGET (48u << 20) /* bytes queued per sample, at most */
+static struct {
+    int16_t zone;
+    uint32_t seen; /* REAL_TIME_FRAMES when last predicted */
+} g_ahead[AHEAD_ZONES];
+static uint32_t g_stream_point, g_stream_list; /* guest scratch */
+static uint32_t g_stream_last;                  /* REAL_TIME_FRAMES at the last sample */
+static uint8_t *g_hinted;                       /* per section entry: queued already */
+static uint32_t g_hinted_base, g_hinted_count;
+
+static int16_t zone_at(float x, float y) {
+    uint32_t section = 0, arg = g_stream_point;
+    put_float(g_stream_point, x);
+    put_float(g_stream_point + 4, y);
+    if (g_api->guest_call(g_api, FIND_DRIVABLE, VSM, &arg, 1, &section) != POP_OK || !section)
+        return -1;
+    uint16_t z = 0;
+    g_api->guest_read_u16(g_api, section + 0xc, &z);
+    return (int16_t)z;
+}
+
+/* A zone's section numbers into g_stream_list, as DetermineStreamingSections
+ * takes them: a loading section naming the zone, else the drivable section's
+ * own visible list. */
+static int zone_sections(int16_t zone) {
+    for (uint32_t ls = get_u32(VSM + 0x20); ls && ls != VSM + 0x20; ls = get_u32(ls)) {
+        uint16_t n = 0;
+        g_api->guest_read_u16(g_api, ls + 0x18, &n);
+        for (int i = 0; i < (int16_t)n; ++i) {
+            uint16_t z = 0;
+            g_api->guest_read_u16(g_api, ls + 0x1a + 2u * (uint32_t)i, &z);
+            if ((int16_t)z != zone)
+                continue;
+            uint32_t args[3] = {ls, g_stream_list, 0x180}, count = 0;
+            if (g_api->guest_call(g_api, SECTIONS_TO_LOAD, VSM, args, 3, &count) != POP_OK)
+                return 0;
+            return (int)count > 0x180 ? 0x180 : (int)count;
+        }
+    }
+    for (uint32_t d = get_u32(VSM + 0x10); d && d != VSM + 0x10; d = get_u32(d)) {
+        uint16_t z = 0, n = 0;
+        g_api->guest_read_u16(g_api, d + 0xc, &z);
+        if ((int16_t)z != zone)
+            continue;
+        g_api->guest_read_u16(g_api, d + 0x10, &n);
+        int count = (int16_t)n > 0x180 ? 0x180 : (int16_t)n;
+        for (int i = 0; i < count; ++i) {
+            uint16_t s = 0;
+            g_api->guest_read_u16(g_api, d + 0x12 + 2u * (uint32_t)i, &s);
+            g_api->guest_write_u16(g_api, g_stream_list + 2u * (uint32_t)i, s);
+        }
+        return count;
+    }
+    return 0;
+}
+
+/* One range into the ring native/pacing.c drains; joined to the previous one
+ * when it continues it in the same file. */
+static int ring_push(uint32_t name, uint32_t offset, uint32_t length) {
+    uint32_t head = get_u32(STREAM_RING_HEAD), tail = get_u32(STREAM_RING_TAIL);
+    if (head != tail) {
+        uint32_t last = STREAM_RING + 12u * ((head - 1) % STREAM_RING_SIZE);
+        if (get_u32(last) == name && get_u32(last + 4) + get_u32(last + 8) == offset) {
+            g_api->guest_write_u32(g_api, last + 8, get_u32(last + 8) + length);
+            return 1;
+        }
+    }
+    if (head - tail >= STREAM_RING_SIZE)
+        return 0;
+    uint32_t e = STREAM_RING + 12u * (head % STREAM_RING_SIZE);
+    g_api->guest_write_u32(g_api, e, name);
+    g_api->guest_write_u32(g_api, e + 4, offset);
+    g_api->guest_write_u32(g_api, e + 8, length);
+    g_api->guest_write_u32(g_api, STREAM_RING_HEAD, head + 1);
+    return 1;
+}
+
+/* The not-yet-loaded sections of `zone`, as file ranges. Section entries:
+ * 0x5c bytes at TrackStreamer+0 (count at +4); +8 section number, +0xc state
+ * (2 loading, 3-4 resident), +0x10 file index into the 0x40-byte names at
+ * TrackStreamer+0x30, +0x14 file offset, +0x1c bytes read (LoadSection
+ * 0072dac0). */
+static uint32_t hint_zone(int16_t zone, uint32_t budget) {
+    uint32_t base = get_u32(TRACK_STREAMER), count = get_u32(TRACK_STREAMER + 4), queued = 0;
+    void *p;
+    if (!base || !count || count > 0x4000 || g_api->guest_ptr(g_api, base, count * 0x5cu, &p) != POP_OK)
+        return 0;
+    if (base != g_hinted_base || count != g_hinted_count) {
+        free(g_hinted);
+        g_hinted = (uint8_t *)calloc(count, 1);
+        g_hinted_base = g_hinted ? base : 0;
+        g_hinted_count = g_hinted ? count : 0;
+        if (!g_hinted)
+            return 0;
+    }
+    const uint8_t *entries = (const uint8_t *)p;
+    int n = zone_sections(zone);
+    for (int i = 0; i < n && queued < budget; ++i) {
+        uint16_t number = 0;
+        g_api->guest_read_u16(g_api, g_stream_list + 2u * (uint32_t)i, &number);
+        for (uint32_t k = 0; k < count; ++k) {
+            const uint8_t *s = entries + 0x5cu * k;
+            int16_t id;
+            uint32_t state, file, offset, length;
+            memcpy(&id, s + 8, 2);
+            if (id != (int16_t)number)
+                continue;
+            memcpy(&state, s + 0xc, 4);
+            memcpy(&file, s + 0x10, 4);
+            memcpy(&offset, s + 0x14, 4);
+            memcpy(&length, s + 0x1c, 4);
+            if (!g_hinted[k] && state < 2 && length && file < 2) {
+                if (!ring_push(TRACK_STREAMER + 0x30u + file * 0x40u, offset, length))
+                    return queued;
+                g_hinted[k] = 1;
+                queued += length;
+            }
+            break;
+        }
+    }
+    return queued;
+}
+
+static void service_game_state(const PopModApi *api, pop_cpu_v1 *cpu, PopHookInvocation *inv, void *user) {
+    uint8_t valid = 0, disabled = 0, remap = 0;
+    (void)inv;
+    (void)user;
+    if (cpu->ecx != TRACK_STREAMER || !g_stream_point || !api->guest_call)
+        return;
+    uint32_t now = get_u32(REAL_TIME_FRAMES);
+    if (now - g_stream_last < 15) /* a quarter of a second */
+        return;
+    g_stream_last = now;
+    uint32_t e = TRACK_STREAMER + 0xc0; /* the camera's streaming position */
+    api->guest_read_u8(api, e + 0x1c, &valid);
+    api->guest_read_u8(api, TRACK_STREAMER + 0x2b1, &disabled);
+    api->guest_read_u8(api, TRACK_STREAMER + 0xb0, &remap); /* split screen renumbers sections */
+    if (!valid || disabled || remap || !get_u32(TRACK_STREAMER + 0x838))
+        return;
+    float x = get_float(e), y = get_float(e + 4), vx = get_float(e + 0xc), vy = get_float(e + 0x10);
+    float speed = sqrtf(vx * vx + vy * vy);
+    if (!(speed > 5.0f && speed < 200.0f))
+        return;
+    uint16_t current = 0;
+    api->guest_read_u16(api, e + 0x1e, &current);
+    float reach = speed * 3.0f;
+    reach = reach < 60.0f ? 60.0f : reach > 300.0f ? 300.0f : reach;
+    uint32_t budget = HINT_BUDGET;
+    for (float d = 40.0f; d <= reach && budget; d += 40.0f) {
+        int16_t zone = zone_at(x + vx / speed * d, y + vy / speed * d);
+        if (zone <= 0 || zone == (int16_t)current)
+            continue;
+        int known = -1, stalest = 0;
+        for (int i = 0; i < AHEAD_ZONES; ++i) {
+            if (g_ahead[i].zone == zone)
+                known = i;
+            if (g_ahead[i].seen < g_ahead[stalest].seen)
+                stalest = i;
+        }
+        /* A zone is hinted once until it has not been predicted for 10 s. */
+        if (known >= 0 && now - g_ahead[known].seen < 600) {
+            g_ahead[known].seen = now;
+            continue;
+        }
+        int slot = known >= 0 ? known : stalest;
+        g_ahead[slot].zone = zone;
+        g_ahead[slot].seen = now;
+        uint32_t used = hint_zone(zone, budget);
+        budget = used >= budget ? 0 : budget - used;
+    }
+}
+
 /* ---- lifecycle ---------------------------------------------------------- */
 
 static PopModStatus install(uint32_t addr, PopHookFn fn, int32_t mode, int slot) {
@@ -532,6 +898,43 @@ static PopModStatus install_at(uint32_t addr, uint32_t ret, PopHookFn fn, int32_
     return g_api->hook_install_at_callsite(g_api, addr, ret, fn, mode, 0, &g_hooks[slot]);
 }
 
+/* Optional hooks: one that cannot be installed (a function the symbol table
+ * lacks) leaves only its correction out, so it is logged, not fatal. */
+static void install_optional(uint32_t addr, PopHookFn fn, int32_t mode, int slot, const char *what) {
+    if (install(addr, fn, mode, slot) == POP_OK)
+        return;
+    g_hooks[slot] = 0;
+    char line[128];
+    snprintf(line, sizeof line, "core.nfsmw: %s hook at %08x not installed", what, (unsigned)addr);
+    g_api->log(g_api, line);
+}
+
+static void install_timing(void) {
+    int pacing = (int)setting("frame_pacing", 1) != 0;
+    int timing = (int)setting("tick_timing", 1) != 0;
+    int stream = (int)setting("stream_ahead", 0) != 0;
+    char line[160];
+    g_api->guest_write_u32(g_api, SLOT_PACING, pacing ? 1u : 0u);
+    g_api->guest_write_u32(g_api, STREAM_RING_HEAD, 0);
+    g_api->guest_write_u32(g_api, STREAM_RING_TAIL, 0);
+    if (timing) {
+        install_optional(ADVANCE_REAL_TIME, advance_real_time, POP_HOOK_REPLACE, 13, "AdvanceRealTime");
+        if (g_rate != 60) {
+            install_optional(SIMTASK_CTOR, simtask_ctor, POP_HOOK_BEFORE, 14, "SimTask");
+            install_optional(RUN_NORMAL_SPEED, run_normal_speed, POP_HOOK_BEFORE, 15, "RunNormalSpeed");
+            install_optional(NIS_ON_TASK, nis_on_task, POP_HOOK_REPLACE, 16, "NISActivity::OnTask");
+            install_optional(HUD_CTOR, hud_ctor, POP_HOOK_BEFORE, 17, "FEngHud::FEngHud");
+            install_optional(HUD_FEATURES, hud_features, POP_HOOK_REPLACE, 18, "DetermineHudFeatures");
+        }
+    }
+    if (stream && g_api->guest_call && g_api->guest_alloc(g_api, 8, &g_stream_point) == POP_OK &&
+        g_api->guest_alloc(g_api, 2 * 0x180, &g_stream_list) == POP_OK)
+        install_optional(SERVICE_GAME_STATE, service_game_state, POP_HOOK_BEFORE, 19, "ServiceGameState");
+    snprintf(line, sizeof line, "core.nfsmw: frame pacing %s, tick timing %s, streaming hints %s",
+             pacing ? "on" : "off", timing ? "on" : "off", g_hooks[19] ? "on" : "off");
+    g_api->log(g_api, line);
+}
+
 PopModStatus pop_mod_init(const PopModApi *api) {
     PopModStatus s;
     g_api = api;
@@ -541,6 +944,7 @@ PopModStatus pop_mod_init(const PopModApi *api) {
     if (rate > 480)
         rate = 480;
     g_frame_time_bits = float_bits(1.0f / (float)rate);
+    g_rate = (int)rate;
     g_widescreen = (int)setting("widescreen", 1);
     {
         char line[128];
@@ -566,8 +970,19 @@ PopModStatus pop_mod_init(const PopModApi *api) {
         return s;
     if ((s = install(LOCALIZED_WIDE, localized_wide, POP_HOOK_REPLACE, 12)) != POP_OK)
         return s;
-    if (!g_widescreen)
+    install_timing();
+    if (!g_widescreen) {
+        /* The original camera: the redirected slots read what the replaced
+         * operands held. */
+        api->guest_write_u32(api, SLOT_FOV_H, get_u32(CONST_ONE));
+        api->guest_write_u32(api, SLOT_FOV_HALF, get_u32(CONST_HALF));
+        api->guest_write_u32(api, SLOT_FOV_V, get_u32(CONST_ONE));
+        api->guest_write_u32(api, SLOT_FOV_ASPECT, get_u32(CONST_ONE));
+        api->guest_write_u32(api, SLOT_FOV_ASPECT + 4, get_u32(CONST_ONE));
+        api->guest_write_u32(api, SLOT_SHADOW_H, get_u32(CONST_ONE));
+        api->guest_write_u32(api, SLOT_SHADOW_DISTANCE, get_u32(CONST_SHADOW_DISTANCE));
         return POP_OK;
+    }
 
     put_float(SLOT_SHADOW_DISTANCE, 10.0f);
     {
@@ -602,8 +1017,10 @@ PopModStatus pop_mod_init(const PopModApi *api) {
 }
 
 PopModStatus pop_mod_exit(void) {
-    for (int i = 0; i < 14; ++i)
+    for (int i = 0; i < HOOK_SLOTS; ++i)
         if (g_hooks[i])
             g_api->hook_remove(g_api, g_hooks[i]);
+    free(g_hinted);
+    g_hinted = 0;
     return POP_OK;
 }

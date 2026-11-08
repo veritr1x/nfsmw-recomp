@@ -15,4 +15,10 @@
 #define FN_006cf2b0 native_006cf2b0 /* a box against the frustum */
 #define FN_007c4b80 native_007c4b80 /* _ftol2: ST(0) to EDX:EAX, toward zero */
 
+/* Not hot: frame pacing and the streaming hints (native/pacing.c). Each
+ * calls the translation and adds to it; RECOMP_NATIVE does not switch them
+ * (core.nfsmw frame_pacing and RECOMP_NFSMW_PACING do). */
+#define FN_0064cf00 native_0064cf00 /* bThreadYield: the scheduler's limiter */
+#define FN_006e7220 native_006e7220 /* the frame's Present */
+
 #endif

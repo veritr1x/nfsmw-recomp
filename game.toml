@@ -45,8 +45,8 @@ volatile_reads = []
 # The four above, plus pointer-referenced helpers found by scanning the image
 # (2026-09-17, docs/analysis.md).
 # Native replacements for the renderer's hottest x87 routines and the CRT's
-# float-to-integer cast (native/).
-native = { header = "native/overrides.h", sources = ["native/culling.c", "native/ftol.c"] }
+# float-to-integer cast, and the frame pacing around Present (native/).
+native = { header = "native/overrides.h", sources = ["native/culling.c", "native/ftol.c", "native/pacing.c"] }
 # The engine's frame time, 1/60, is one pooled .rdata float with 17 readers.
 # The three that set the simulation rate read a slot in the section padding
 # instead, which the core.nfsmw mod fills (mods/core/nfsmw/nfsmw.c).
@@ -120,6 +120,16 @@ instruction_patches = [
     { at = 0x006c20a0, text = "PUSH 0xa37838" },
 ]
 data_seeds = [
+    # The redirected camera slots hold the originals' values when core.nfsmw's
+    # widescreen is off (or the mod is absent). The loader's redirect copies
+    # are eight bytes wide and overlap these four-byte slots (0x00a37818's
+    # copy lands on 0x00a3781c), and seeds are applied after them. Values read
+    # from speed.exe: 0x0089096c 1.0, 0x008933d4 0.5, 0x008910c4 0x3f8ccccd.
+    { addr = 0x00a37804, float = 1.0 },
+    { addr = 0x00a37808, float = 0.5 },
+    { addr = 0x00a3780c, float = 1.0 },
+    { addr = 0x00a37818, float = 1.0 },
+    { addr = 0x00a3781c, value = 0x3f8ccccd },  # float32 1.1
     { addr = 0x00a37810, float = 1.0 },
     { addr = 0x00a37814, float = 1.0 },
     { addr = 0x00a37824, float = 450.0 },
@@ -902,20 +912,28 @@ pad = "mapped"
 # Racing preset over the game's default PC keys. The 2005 executable reads
 # DirectInput, not XInput; generic native joystick defaults are not this layout.
 # Triangle confirms menus; Start pauses/goes back; dpad navigates menus.
+# The defaults, from the game's key table at 0x008f6d80 (52-byte records: name,
+# then up to four device/key pairs): gas Up, brake Down, steer Left/Right,
+# e-brake Space, speedbreaker RCtrl or G, nitrous LAlt or X, shift down LCtrl,
+# shift up LShift, reset R, camera C, look back L, pause Esc, HUD pad right
+# Tab. Cross and square keep gas and brake (smoke/pad-race.script drives with
+# them); nitrous takes L1 (Tab before), speedbreaker R3 (a left click with a
+# right-stick cursor before), look back L3 and reset Select (the camera, C,
+# before; it stays on the keyboard).
 left_stick = "horizontal_arrows"
-right_stick = "cursor"
+right_stick = "none"
 dpad = "arrows"
 cross = "key:Up"
 square = "key:Down"
 circle = "key:Space"
 triangle = "key:Return"
-l1 = "key:Tab"
+l1 = "key:X"
 r1 = "key:LShift"
 l2 = "key:Down"
 r2 = "key:Up"
-l3 = "none"
-r3 = "mouse_left"
-select = "key:C"
+l3 = "key:L"
+r3 = "key:G"
+select = "key:R"
 start = "key:Escape"
 
 [launcher]

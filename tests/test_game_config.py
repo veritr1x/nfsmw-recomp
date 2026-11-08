@@ -1,6 +1,7 @@
 """Need for Speed: Most Wanted's game.toml renders the values the kit's hooks expect."""
 import importlib.util
 from pathlib import Path
+import struct
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -63,6 +64,43 @@ class NfsmwConfigTests(unittest.TestCase):
         for address in addresses:
             self.assertTrue(SENTINEL_LOW <= address < SENTINEL_HIGH, hex(address))
         self.assertEqual(self.cfg["translate"]["volatile_reads"], [])
+
+    def test_redirected_camera_slots_are_seeded_with_the_replaced_constants(self):
+        """With core.nfsmw's widescreen off nothing else writes these slots."""
+        def bits(entry):
+            if "float" in entry:
+                return struct.unpack("<I", struct.pack("<f", entry["float"]))[0]
+            return entry["value"] & 0xFFFFFFFF
+        seeds = {entry["addr"]: bits(entry) for entry in self.cfg["translate"]["data_seeds"]}
+        constants = {0x0089096C: 0x3F800000, 0x008933D4: 0x3F000000, 0x008910C4: 0x3F8CCCCD}
+        redirected = [r for r in self.cfg["translate"]["operand_redirects"] if r["from"] in constants]
+        self.assertEqual(len(redirected), 6)
+        for r in redirected:
+            self.assertEqual(seeds.get(r["to"]), constants[r["from"]], hex(r["to"]))
+
+    def test_mod_and_native_slots_stay_in_the_padding_apart_from_the_seeds(self):
+        """native/pacing.c and core.nfsmw share these; nothing seeds them."""
+        seeded = {entry["addr"] for entry in self.cfg["translate"]["data_seeds"]}
+        slots = [0x00A37B60, 0x00A37B70, 0x00A37B74] + [0x00A37C00 + 4 * i for i in range(32 * 3)]
+        for slot in slots:
+            self.assertTrue(SENTINEL_LOW <= slot < self.cfg["translate"]["animation_counter"], hex(slot))
+            self.assertNotIn(slot, seeded, hex(slot))
+        for name in ("mods/core/nfsmw/nfsmw.c", "native/pacing.c"):
+            text = (ROOT / name).read_text()
+            for macro, value in (("SLOT_PACING", "0x00a37b60u"), ("STREAM_RING_HEAD", "0x00a37b70u"),
+                                 ("STREAM_RING_TAIL", "0x00a37b74u"), ("STREAM_RING", "0x00a37c00u"),
+                                 ("STREAM_RING_SIZE", "32u")):
+                self.assertRegex(text, r"#define %s %s\b" % (macro, value), name)
+
+    def test_mapped_pad_reaches_every_driving_action(self):
+        """The default PC keys (the key table at 0x008f6d80) for each action."""
+        mapped = self.cfg["controls"]["mapped"]
+        targets = {value for key, value in mapped.items() if isinstance(value, str)}
+        for key in ("Up", "Down", "Space", "LShift", "X", "G", "L", "R", "Escape", "Return"):
+            self.assertIn("key:" + key, targets, key)
+        self.assertEqual(mapped["left_stick"], "horizontal_arrows")
+        # smoke/pad-race.script drives with cross and brakes with square.
+        self.assertEqual((mapped["cross"], mapped["square"]), ("key:Up", "key:Down"))
 
     def test_bundle_exclusions_and_setup(self):
         # What the iPad bundle leaves behind: the uninstaller, the installer
