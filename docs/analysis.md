@@ -1524,9 +1524,10 @@ already-running worker often gets no answer.
   draw would repeat within a pass, and reuses identical shader constants
   (kit changelog): the main thread's busy time per race frame fell from about
   14 ms to about 5 ms.
-- **Measurement caution.** From about 12:50 the same build that had run
-  95-117 FPS on Quick Play routes ran 40-56 FPS, and Chromium presented at
-  77-98 Hz instead of 120, even after restarting the browser; the GPU sat in
-  P5 (about 800 MHz) during races. Compare builds back to back on the same
-  route, and check the GPU's clock state, before reading a frame rate as a
-  regression.
+- **Heavy routes.** Quick Play picks the route, and the cost per frame
+  depends heavily on it: the same build ran 95-117 FPS on an outskirts road
+  and 40-56 FPS at the lighthouse north of Camden, downtown and in the park,
+  where the game thread is about 91% busy (about 23-25 ms a frame: 45% guest
+  code, 23% Direct3D). The presented rate and the GPU's clock fall with it.
+  This matches the issue #3 report (about 50 FPS north of Camden). Compare
+  builds on the same route, for example with the pause menu's Restart.
