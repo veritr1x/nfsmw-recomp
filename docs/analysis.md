@@ -1515,3 +1515,18 @@ already-running worker often gets no answer.
   tail call; it is now a real call's return site, and all four culling
   functions compare equal (12,000 runs). Quick Play, wide open road with
   rivals: 95-117 new frames a second.
+- **Frustum box test, native, 2026-11-08.** `006cf2b0` (box against the
+  six frustum planes: 0 outside, 1 crossing, 2 inside) was 2.3% of the game
+  thread; native it is 1.0%, sharing the box transform with `006be800`. The
+  self-test adds it with and without a matrix: 15,000 runs over the five
+  culling functions, 0 differ.
+- **WebGPU bindings.** The kit now skips vertex, index and bind group calls a
+  draw would repeat within a pass, and reuses identical shader constants
+  (kit changelog): the main thread's busy time per race frame fell from about
+  14 ms to about 5 ms.
+- **Measurement caution.** From about 12:50 the same build that had run
+  95-117 FPS on Quick Play routes ran 40-56 FPS, and Chromium presented at
+  77-98 Hz instead of 120, even after restarting the browser; the GPU sat in
+  P5 (about 800 MHz) during races. Compare builds back to back on the same
+  route, and check the GPU's clock state, before reading a frame rate as a
+  regression.

@@ -12,6 +12,7 @@
 #define FN_006c9510 native_006c9510 /* sphere inside all six frustum planes */
 #define FN_006c9570 native_006c9570 /* swept sphere against the frustum */
 #define FN_006be800 native_006be800 /* a box through a matrix, as a box */
+#define FN_006cf2b0 native_006cf2b0 /* a box against the frustum */
 #define FN_007c4b80 native_007c4b80 /* _ftol2: ST(0) to EDX:EAX, toward zero */
 
 #endif

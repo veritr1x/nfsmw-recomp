@@ -1,6 +1,6 @@
 /* culling.c - the renderer's frustum tests, native.
  *
- * Four small x87 routines the world renderer calls thousands of times a
+ * Five small x87 routines the world renderer calls thousands of times a
  * frame. Translated, each FPU instruction is a register-stack operation on
  * the X86 state; here the same arithmetic runs on host doubles, in the same
  * order and through the same x86.h helpers (fx87, fto_float, fcom, fucom),
@@ -22,9 +22,11 @@ void native_006c9440(X86 *c);
 void native_006c9510(X86 *c);
 void native_006c9570(X86 *c);
 void native_006be800(X86 *c);
+void native_006cf2b0(X86 *c);
 
 static const uint32_t K_ZERO = 0x00890968u;  /* float 0.0 */
 static const uint32_t K_ONE = 0x0089096cu;   /* float 1.0 */
+static const uint32_t K_HALF = 0x008933d4u;   /* float 0.5 */
 static const uint32_t K_RADIUS = 0x00a3781cu; /* radius scale: game.toml redirects 0x008910c4 here */
 
 static void selftest(X86 *c);
@@ -209,23 +211,21 @@ void native_006c9570(X86 *c) {
  * the original rounds the second product to a float in its first argument's
  * slot and compares against that, so the minimum or maximum receives it
  * rounded and the other the unrounded first product. */
-void native_006be800(X86 *c) {
-    if (!native_on(c)) {
-        fn_006be800(c);
-        return;
-    }
-    const uint32_t e = c->r[R_ESP];
-    const uint32_t m = rd32(e + 4), lo = rd32(e + 8), hi = rd32(e + 12);
+/* The arithmetic of 006be800 on a box held in host floats. `scratch` is the
+ * argument slot the original rounds each second product into. Returns the
+ * stack-relative TOP its last FNSTSW saw, for EAX. */
+static void box_transform(X86 *c, uint32_t m, float lo[3], float hi[3], uint32_t scratch) {
     double mx[3], mn[3];
     for (int j = 0; j < 3; ++j)
         mx[j] = mn[j] = rdf32(m + 0x30 + 4u * (uint32_t)j);
     for (uint32_t i = 0; i < 3; ++i) {
-        const double l = rdf32(lo + 4 * i), h = rdf32(hi + 4 * i);
+        const double l = lo[i], h = hi[i];
         for (uint32_t j = 0; j < 3; ++j) {
             const double k = rdf32(m + 16 * i + 4 * j);
             const double a = fx87(c, l * k);
             const float t = fto_float(c, fx87(c, h * k));
-            wrf32(e + 4, t);
+            if (scratch)
+                wrf32(scratch, t);
             fcom(c, a, (double)t);
             if (jp(ah_of(c), 0x05)) { /* a >= t, or unordered */
                 mn[j] = fx87(c, mn[j] + (double)t);
@@ -236,10 +236,27 @@ void native_006be800(X86 *c) {
             }
         }
     }
+    for (uint32_t j = 0; j < 3; ++j) {
+        lo[j] = fto_float(c, mn[j]);
+        hi[j] = fto_float(c, mx[j]);
+    }
+}
+
+void native_006be800(X86 *c) {
+    if (!native_on(c)) {
+        fn_006be800(c);
+        return;
+    }
+    const uint32_t e = c->r[R_ESP];
+    const uint32_t m = rd32(e + 4), lo = rd32(e + 8), hi = rd32(e + 12);
+    float l[3], h[3];
+    for (uint32_t i = 0; i < 3; ++i)
+        l[i] = rdf32(lo + 4 * i), h[i] = rdf32(hi + 4 * i);
+    box_transform(c, m, l, h, e + 4);
     for (uint32_t j = 0; j < 3; ++j)
-        wrf32(lo + 4 * j, fto_float(c, mn[j]));
+        wrf32(lo + 4 * j, l[j]);
     for (uint32_t j = 0; j < 3; ++j)
-        wrf32(hi + 4 * j, fto_float(c, mx[j]));
+        wrf32(hi + 4 * j, h[j]);
     /* The last FNSTSW ran with the six sums and a product on the stack. */
     const uint32_t top = (c->fpu_top - 7u) & 7u;
     c->r[R_EAX] = (m & 0xffff0000u) | (uint16_t)((c->fpu_sw & (uint16_t)~0x3800u) | (uint16_t)(top << 11));
@@ -247,6 +264,60 @@ void native_006be800(X86 *c) {
     c->r[R_EDX] = m + 0x38;
     c->eip = rd32(e);
     c->r[R_ESP] = e + 4;
+}
+
+/* ---- 006cf2b0 ------------------------------------------------------------
+ * thiscall (view; lo, hi, matrix or null) -> 0 outside, 1 crossing a plane,
+ * 2 inside: the box lo..hi, through the matrix when there is one, against
+ * the six frustum planes at [view] + 0x140. The box's centre and half size
+ * go through floats on the stack, as in the original; the per-plane sums
+ * stay in registers. */
+void native_006cf2b0(X86 *c) {
+    if (!native_on(c)) {
+        fn_006cf2b0(c);
+        return;
+    }
+    const uint32_t e = c->r[R_ESP];
+    const uint32_t a_lo = rd32(e + 4), a_hi = rd32(e + 8), m = rd32(e + 12);
+    float lo[3], hi[3];
+    for (uint32_t i = 0; i < 3; ++i)
+        lo[i] = rdf32(a_lo + 4 * i), hi[i] = rdf32(a_hi + 4 * i);
+    if (m)
+        box_transform(c, m, lo, hi, 0); /* its scratch slot is below this frame */
+    const double half = rdf32(K_HALF), zero = rdf32(K_ZERO);
+    float ctr[3], ext[3];
+    for (int i = 0; i < 3; ++i)
+        ctr[i] = fto_float(c, fx87(c, fx87(c, (double)hi[i] + (double)lo[i]) * half));
+    for (int i = 0; i < 3; ++i)
+        ext[i] = fto_float(c, fx87(c, (double)hi[i] - (double)ctr[i]));
+    uint32_t p = rd32(c->r[R_ECX]) + 0x144;
+    uint32_t crossing = 0;
+    for (int j = 0; j < 6; ++j, p += 16) {
+        const double pa = rdf32(p - 4), pb = rdf32(p), pc = rdf32(p + 4), pd = rdf32(p + 8);
+        double r = fx87(c, fabs(pb) * (double)ext[1]);
+        r = fx87(c, r + fx87(c, fabs(pc) * (double)ext[2]));
+        r = fx87(c, r + fx87(c, fabs(pa) * (double)ext[0]));
+        double d = fx87(c, fx87(c, (double)ctr[1] * pb) + fx87(c, (double)ctr[2] * pc));
+        d = fx87(c, d + fx87(c, (double)ctr[0] * pa));
+        d = fx87(c, d + pd);
+        fcom(c, fx87(c, d + r), zero);
+        if (!jp(ah_of(c), 0x05)) { /* d + r < 0: wholly outside this plane */
+            c->r[R_EAX] = 0;
+            c->r[R_ECX] = p;
+            c->r[R_EDX] = (uint32_t)j + 1;
+            c->eip = rd32(e);
+            c->r[R_ESP] = e + 16;
+            return;
+        }
+        fcom(c, fx87(c, d - r), zero);
+        if (!jp(ah_of(c), 0x05))
+            crossing = 1;
+    }
+    c->r[R_EAX] = crossing ? 1u : 2u;
+    c->r[R_ECX] = p;
+    c->r[R_EDX] = 7;
+    c->eip = rd32(e);
+    c->r[R_ESP] = e + 16;
 }
 
 /* ---- self-test -------------------------------------------------------------
@@ -316,6 +387,7 @@ static int compare_run(X86 *c, GuestFn translated, GuestFn native, uint32_t base
 static void selftest(X86 *c) {
     const uint32_t base = c->r[R_ESP] - 0x20000;
     const uint32_t planes = base + 0x100, sph = base + 0x200, dir = base + 0x220, out = base + 0x240;
+    const uint32_t view = base + 0x300;
     const uint32_t stack = base + 0x10000;
     /* A real call's return site: a translated RET to a function's entry runs
      * that function as a tail call, which 0x00401000 was. */
@@ -358,7 +430,16 @@ static void selftest(X86 *c) {
         wr32(esp + 8, out);
         wr32(esp + 12, out + 12);
         bad += compare_run(&s, fn_006be800, native_006be800, base, esp, 0x20000, out, out + 12, 3, "006be800", trial);
-        runs += 4;
+        /* view->006cf2b0(lo, hi, matrix or null): the planes as the frustum */
+        wr32(view, planes - 0x140);
+        s.r[R_ECX] = view;
+        wr32(esp, ret);
+        wr32(esp + 4, out);
+        wr32(esp + 8, out + 12);
+        wr32(esp + 12, trial % 3 ? planes : 0);
+        bad += compare_run(&s, fn_006cf2b0, native_006cf2b0, base, esp, 0x20000, 0, 0, 3, "006cf2b0", trial);
+        s.r[R_ECX] = planes;
+        runs += 5;
     }
     fprintf(stderr, "native self-test: %d runs, %d differ\n", runs, bad);
 }
