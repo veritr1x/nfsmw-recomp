@@ -28,6 +28,9 @@ globals = "globals.toml"
 # The kit's translator wants a visual-phase counter; this game has none that
 # has been audited. Sentinel, and no reads are rewritten.
 animation_counter = 0x00a37f00
+# _ftol2 (007c4b80, native/ftol.c) takes ST(0) straight from the caller's
+# cached x87 stack when [translate.speedups] x87_st0_leaves is on.
+st0_leaves = [{ at = 0x007c4b80, recipe = "ftol2" }]
 volatile_reads = []
 # Function entries the Ghidra listing lacks. The CRT stores pointers to its
 # own helpers in .data and jumps through them (007f0e13 jumps through the slot
