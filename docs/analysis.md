@@ -1504,3 +1504,14 @@ already-running worker often gets no answer.
   Chromium report the page hidden and throttle it to one frame a second; the
   overlay then reads 1 FPS with 1000 ms frames. Bring the window to the
   front (`Page.bringToFront`) before measuring.
+- **Box transform, native, 2026-11-08.** `006be800`, which carries a
+  bounding box through a matrix for culling, was the hottest guest function
+  (3.7% of the game thread): its x87 stack spilled to memory at every branch
+  of its loop. `native/culling.c` replaces it; the self-test compares it with
+  the translation on 3000 random boxes and matrices (all six outputs, EAX,
+  ECX, EDX and the argument slot it uses as scratch): 0 differ. In a race it
+  now takes 1.2% of the game thread. The self-test's fake return address was
+  `0x00401000`, a function entry, which the kit's RET handling runs as a
+  tail call; it is now a real call's return site, and all four culling
+  functions compare equal (12,000 runs). Quick Play, wide open road with
+  rivals: 95-117 new frames a second.
