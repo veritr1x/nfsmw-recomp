@@ -189,6 +189,9 @@ entry_points = [
     0x006ac300,  # vtable slot 008abc50
     0x007684e0,  # vtable slot 008b5b6c
     0x007c1490,  # vtable slot 008b7e30
+    # vtable slot 008b808c, right after 007bfc50's tail jump. Customize Car calls
+    # it from 005a4ffa (CALL [EAX+4]); untranslated, the shop hung or crashed.
+    0x007bfd30,
     0x006a8870,  # the unlisted function 0x006a8e70 jumps to; it holds the switch at 0x006a8a14
     0x006a8e70,  # a vtable thunk right after that switch's byte table; Ghidra read it as data
     0x0081a7a6,  # a vtable method in the codec region, missing from the listing
