@@ -37,6 +37,12 @@ animation_counter = 0x00a37f00
 # _ftol2 (007c4b80, native/ftol.c) takes ST(0) straight from the caller's
 # cached x87 stack when [translate.speedups] x87_st0_leaves is on.
 st0_leaves = [{ at = 0x007c4b80, recipe = "ftol2" }]
+# The targets each indirect CALL site reached in a recorded run (the fixed
+# custom race from the front end, speedup icall_profile_record, table logged
+# with RECOMP_ICALL_PROFILE_SECS): under [translate.speedups] devirt a site
+# with at most four calls them directly. 97.6% of the run's indirect calls
+# were at such sites.
+icall_profile = "icall-profile.txt"
 volatile_reads = []
 # Function entries the Ghidra listing lacks. The CRT stores pointers to its
 # own helpers in .data and jumps through them (007f0e13 jumps through the slot
@@ -887,6 +893,7 @@ entry_points = [
 [translate.speedups]
 x87_carry = true
 x87_st0_leaves = true
+devirt = true
 
 [hooks]
 # runtime/kernel32.cpp native_frame_clock: GetTickCount return addresses of
@@ -911,7 +918,10 @@ sprites = []
 # runtime/win32.h free run is not used. 007ec1d3 is the start routine of every
 # EA thread (it calls param[1](param[2]); NFS Carbon's 008daf40), but running
 # those threads beside the game thread corrupted the intro movies and race
-# textures (2026-11-08): their shared state is not all behind locks.
+# textures (2026-11-08): their shared state is not all behind locks. The sound
+# mixer's pass alone (0082049e, run from 00820907 inside the audio library's
+# mutex at [009c29cc]) was tried on 2026-11-10 and left off: its runs could
+# not be told from runs without it (the test browser itself varied more).
 free_run = []
 
 [mods]

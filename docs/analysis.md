@@ -1758,3 +1758,68 @@ lighting object's blend at `+0x290`, eased by 00758100 toward the rain zone's
 target while in game) is the original's behaviour too, confirmed on the
 retail game; the floor layer's vertex shader constant c15 is its own `def`
 (1, 0, 2500, log2 e), applied over the register file.
+
+## 2026-11-10: frames locked to the display, and what the benchmarks were measuring
+
+Measured on the web build in a Chromium 120 Hz window (Ryzen 7 7800X3D,
+RTX 4090), the fixed custom race, 60 s of driving, one line a second from
+`RECOMP_PACING_LOG=1` (kit) and `RECOMP_NFSMW_TICK_LOG=1` (core.nfsmw).
+
+- The game thread is not the limit in this race. With pacing on it runs 120
+  passes and 120 ticks a second, and a profile at the game's own limiter shows
+  about 40% of the thread waiting for its next slot.
+- The dips were at the display. The slots of native/pacing.c ran on the game's
+  clock at the tick rate; the display's 8.333 ms period drifts against it, and
+  in the stretches where frames finished right at a refresh the presenter
+  showed 92 new frames a second of the 120 produced (23% repeats, about 28
+  drops a second) for some 15 s at a time.
+- Display lock (native/pacing.c `display_lock`, kit
+  `host_present_display_sync`): where the presenter reports the display's
+  cadence and it is within 2% of a tick, the slot takes the display's period
+  and is steered so that a sealed frame has waited 4 ms when its refresh takes
+  it; the scheduler's leftover fraction is set to 0.5 each pass. Two runs:
+  119.9 new frames a second on average, 118.5 at the least in any second, no
+  repeats, 4 drops in 60 s. `RECOMP_NFSMW_DISPLAY_LOCK=0` turns it off,
+  `RECOMP_NFSMW_LOCK_AGE=<ms>` sets the wait, `RECOMP_NFSMW_LOCK_LOG=1` reports
+  it. Game time follows the display, so it is off by the display's error
+  (8.3340 ms measured against 8.3333).
+- A display that is not within 2% of the tick rate (60 or 144 Hz with
+  `sim_rate` 120) keeps the earlier slots; not measured.
+- With `frame_pacing` off (the test profile had it saved off) the game runs
+  about 170 passes a second for 120 ticks and the presenter drops about 50
+  frames a second: 119.7 new frames a second, unevenly spaced.
+
+Measuring lessons from the day, which cost several wrong conclusions:
+
+- A Chromium that had loaded the game dozens of times ran the same build, same
+  scene, at anything from 5 to 95 frames a second, with the simulation at 4
+  ticks a pass (behind real time). A freshly started one ran it at 120.
+  Earlier figures taken in the old process, the mixer free-run comparison
+  among them, do not rank builds. Start the browser fresh for a benchmark.
+- The scripted menu route does not always reach the race (two runs ended in a
+  career movie at 60-70 frames a second). The tick log is the check: no
+  `ticks:` lines means no race.
+- Window focus made no difference in a run that alternated it every 20 s.
+- Indirect-call devirtualisation (`[translate] icall_profile`, speedup
+  `devirt`) is on; its gain has not been measured in a fresh browser.
+
+Driving, the same day (a minimap-following autopilot holding the throttle,
+traffic on, two minutes a run, display lock on): 119.3 to 119.7 new frames a
+second on average, the worst second between 110 and 117.5, and 12 to 52 late
+passes in 14,400 (a pass that started over 9.5 ms after the one before;
+`RECOMP_NFSMW_TICK_LOG=1` counts them). The runs differ more with the state of
+the machine than with the build: the same build against the wall had no late
+pass in one run and 24 in another after the browser was restarted. A profile
+split into frames at the pacing wait gives 4.1 ms of work in a median frame
+and 6.7 ms at the 99th percentile; the late frames are 11 to 16 ms with the
+extra spread over ordinary rendering code, not one function. Not resolved.
+
+- A frame that ran up to 1.5 ms over its slot starts the next at once; one
+  further behind waits for the next slot. Allowing 3.5 ms measured worse.
+- When more than about one frame in eight is late the lock lets go for three
+  seconds, so a game that cannot fill the display's slots is not made to
+  alternate new and repeated pictures. Not exercised by these runs.
+- `RECOMP_NFSMW_LATE_LOG=1` prints each frame over 9.5 ms. Printing it at a
+  lower threshold slowed the run it was measuring (102 frames a second).
+- The race load still dips to about 100 frames a second for three seconds
+  while the track streams in, and the intro movies run at 60.

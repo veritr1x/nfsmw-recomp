@@ -75,6 +75,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 POP_MOD_DECLARE_ABI();
 
@@ -611,6 +612,48 @@ static void simtask_ctor(const PopModApi *api, pop_cpu_v1 *cpu, PopHookInvocatio
     (void)api;
 }
 
+/* RECOMP_NFSMW_TICK_LOG=1: once a second, how many passes RunNormalSpeed had
+ * and how many ticks they asked for, and the longest time from one pass to
+ * the next. More than one tick a pass means the game is behind real time and
+ * each pass is paying for several simulation steps. */
+static void tick_log(const PopModApi *api, uint32_t n) {
+    static int on = -1;
+    static uint32_t passes, ticks, most, late;
+    static double since, last, longest;
+    struct timespec ts;
+    char line[200];
+    if (on < 0) {
+        const char *e = getenv("RECOMP_NFSMW_TICK_LOG");
+        on = e && *e == '1';
+    }
+    if (!on)
+        return;
+    ++passes;
+    ticks += n;
+    if (n > most)
+        most = n;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    double now = (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
+    if (last > 0.0) {
+        double gap = now - last;
+        if (gap > longest)
+            longest = gap;
+        if (gap > 0.0095)
+            ++late;
+    }
+    last = now;
+    if (now - since < 1.0)
+        return;
+    snprintf(line, sizeof line,
+             "ticks: %u passes, %u ticks (%.2f a pass, most %u) in %.2f s; longest pass %.1f ms, %u over 9.5 ms",
+             passes, ticks, passes ? (double)ticks / passes : 0.0, most, since ? now - since : 0.0,
+             longest * 1e3, late);
+    api->log(api, line);
+    since = now;
+    passes = ticks = most = late = 0;
+    longest = 0.0;
+}
+
 /* Scheduler::RunNormalSpeed(n): the ticks between the original limit and the
  * same real time at this rate, run as the original runs each (every task's
  * OnTask(tick, phase) for phases 0-7, then the event queue), before it runs
@@ -620,6 +663,7 @@ static void run_normal_speed(const PopModApi *api, pop_cpu_v1 *cpu, PopHookInvoc
     uint8_t debug = 0, single = 0;
     (void)inv;
     (void)user;
+    tick_log(api, n);
     if (g_rate <= 60 || !api->guest_call)
         return;
     api->guest_read_u8(api, SCHED_DEBUG_FLAG, &debug);
