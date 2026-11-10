@@ -1695,3 +1695,66 @@ and brake for smoke/pad-race.script.
   00723fa0, TheTrackStreamer 009aa9d0.
 - **CRT copy.** 007c4840 (Ghidra: `FID_conflict:_memcpy`, 672 bytes) is the
   CRT's memmove/memcpy; a native replacement is a candidate like `_ftol2`.
+
+## 2026-11-09: where a race frame goes, and the shim costs cut
+
+A named profile (web build with `RECOMP_WEB_PROFILING_FUNCS=1`) of the game
+thread in a fixed custom race (Circuit, City Perimeter, stock IS300, pacing
+off): the game's own translated code was 37% of it; D3DX effect emulation
+17%, the Direct3D 9 draw path 12%, import dispatch 11%, waiting 9%. The other
+guest threads sat in futex waits, so running guest threads in parallel would
+not shorten this frame; the GPU took 2-4 ms. `RECOMP_IMPORT_TOP=1` counted
+about 2.8 million import calls a second, led by D3DXMatrixMultiply,
+ID3DXEffect::SetMatrix, CommitChanges, DrawIndexedPrimitive and SetVector.
+
+**Measure displayed frames, not game-thread time.** The in-run A/B log
+("recomp ab") reports the game thread's milliseconds a frame; the overlay's
+NEW (new frames shown a second) and AGE are what a player sees. Two changes
+that cut game-thread time cost shown frames: leaf imports that skipped the
+dispatcher's scheduling checkpoint starved the browser's main thread (leaf
+imports now keep the checkpoint), and skipping the constant compare
+(`constcmp`) adds main-thread uploads, which only pays with the command
+stream below on. Game-thread gains of the other switches on that race: lazy
+D3DX pool pulls 3%, unchanged effect pass and sampler states not re-applied
+2.2%.
+
+What moved shown frames:
+
+- The WebGPU device clock was read through a synchronous hop to the browser's
+  main thread, holding the game thread about 10% of a race frame; it is now
+  read on the calling thread.
+- The import command stream (kit `runtime/imports_cs.cpp`, on by default,
+  `RECOMP_CS=0` off) runs Direct3D 9 and ID3DXEffect setters and draws on a
+  worker while the game thread goes on. Parked downtown: 83-85 new frames a
+  second against 66-69, game thread 12 ms against 15.
+- The mod's front-end-size hooks (`set_transform`, two call sites inside
+  006e0200) are no longer installed at the default size of 100%: they did
+  nothing there and cost about 1% of the frame.
+
+Measured and left: the ~230 fixed-function draws a race frame (a 256x256
+environment map and a 1024x1024 depth-only pass, skipped before the kit drew
+them) cost nothing measurable in an A/B; `x87_carry` and `x87_st0_leaves` (on
+in game.toml, translator tests pass) gave no difference that run-to-run noise
+(about 9-14 ms a frame on the same track) would show. The player takes
+`RECOMP_D3D9_FFP=0` and `RECOMP_D3D9_FRAMES_AHEAD=0` from the page URL for a
+tester to narrow a rendering fault.
+
+## 2026-11-10: the showroom floor after a race (issue #3)
+
+Back in the front end after a race, the floor under the car was missing and
+the car's reflection (drawn first, mirrored) showed through: the "doubled
+car". Cause: the guest heap ran out. With the default 256 MB arena the heap
+is about 208 MB; on the way back from the race the game had 211 MB in use,
+and the kit's 4 MB copy for locking the floor's 1024x1024 A8R8G8B8 texture
+(drawn by `worldnormalmap_2_0`, 108 and 180 triangles) failed. LockRect
+returned E_OUTOFMEMORY, the game left the texture unfilled, and every draw
+sampled zeros: black and fully transparent. game.toml now sets
+`guest_size = 0x18000000` (384 MB, the most the web build keeps as a static
+arena); the same route then leaves the texture filled and the floor matches
+the original game.
+
+Ruled out on the way: the rain lighting carried into the front end (the
+lighting object's blend at `+0x290`, eased by 00758100 toward the rain zone's
+target while in game) is the original's behaviour too, confirmed on the
+retail game; the floor layer's vertex shader constant c15 is its own `def`
+(1, 0, 2500, log2 e), applied over the register file.

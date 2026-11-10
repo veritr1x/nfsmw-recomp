@@ -18,6 +18,12 @@ entry_point = 0x007c4040
 guest_root = 'C:\Program Files\EA GAMES\Need for Speed Most Wanted'
 # Where a developer checkout finds the game, relative to the repository root.
 developer_exe = "original/retail/speed.exe"
+# 384 MB, the largest arena the web build keeps static. The default 256 MB
+# leaves a 208 MB heap, and coming back to the front end after a race used all
+# of it (211 MB in use): the 4 MB lock copy of the showroom floor's normal-map
+# texture failed, the floor stayed empty and the car's reflection showed
+# through (issue #3).
+guest_size = 0x18000000
 
 [translate]
 # Ghidra listing directory holding functions.tsv and functions/*.asm,
@@ -874,6 +880,13 @@ entry_points = [
   0x0088be83,
   0x0088bf83,
 ]
+
+# The x87 stack stays in locals across labels and branches inside a function,
+# and _ftol2 takes ST(0) from it (st0_leaves above). The renderer and physics
+# are x87 code, and the game thread is the bottleneck in busy streets.
+[translate.speedups]
+x87_carry = true
+x87_st0_leaves = true
 
 [hooks]
 # runtime/kernel32.cpp native_frame_clock: GetTickCount return addresses of

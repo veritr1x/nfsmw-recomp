@@ -912,6 +912,10 @@ static void install_optional(uint32_t addr, PopHookFn fn, int32_t mode, int slot
 static void install_timing(void) {
     int pacing = (int)setting("frame_pacing", 1) != 0;
     int timing = (int)setting("tick_timing", 1) != 0;
+    /* RECOMP_NFSMW_TICK_TIMING=0|1 overrides the setting, as RECOMP_NFSMW_PACING does pacing. */
+    const char *timing_env = getenv("RECOMP_NFSMW_TICK_TIMING");
+    if (timing_env && (*timing_env == '0' || *timing_env == '1'))
+        timing = *timing_env == '1';
     int stream = (int)setting("stream_ahead", 0) != 0;
     char line[160];
     g_api->guest_write_u32(g_api, SLOT_PACING, pacing ? 1u : 0u);
@@ -1011,6 +1015,12 @@ PopModStatus pop_mod_init(const PopModApi *api) {
      * apart by their return address inside it. */
     if ((s = install(QUEUE_PACKAGE_MESSAGE, queue_package_message, POP_HOOK_REPLACE, 6)) != POP_OK)
         return s;
+    /* At the default size the front end's scale is 1 and set_transform does
+     * nothing, but its two call sites sit in the renderer's busiest function
+     * (006e0200) and dispatching the hook there cost about 1% of a race frame.
+     * The size is read at startup, so the hooks go in only when it is not 100. */
+    if (setting("fe_scale", 100) == 100)
+        return POP_OK;
     if ((s = install_at(SET_TRANSFORM, SET_TRANSFORM_RET_A, set_transform, POP_HOOK_BEFORE, 8)) != POP_OK)
         return s;
     return install_at(SET_TRANSFORM, SET_TRANSFORM_RET_B, set_transform, POP_HOOK_BEFORE, 9);
